@@ -3,9 +3,12 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\ContactController;
-use App\Http\Controllers\AuthController;
-use App\Http\Controllers\UtilisateurController;
-use App\Models\Utilisateur;
+// use App\Http\Controllers\AuthController;
+use App\Http\Controllers\OlonaController;
+// use App\Http\Controllers\UtilisateurController;
+use App\Models\Olona;
+// use App\Models\Utilisateur;
+use App\Http\Controllers\EmploiDuTempsController;
 
 /*
 |--------------------------------------------------------------------------
@@ -31,12 +34,35 @@ Route::get('/getContact', [ContactController::class, 'index']);
 
 
 
-Route::get('/getUtilisateur', [UtilisateurController::class, 'index']);
+// Route::get('/getUtilisateur', [UtilisateurController::class, 'index']);
+// Route::post('/login', function (Request $request) {
+//     $email = $request->input('email');
+//     $password = $request->input('password');
+
+//     $user = Utilisateur::where('email', $email)->first();
+
+//     if (!$user || $user->password !== $password) {
+//         return response()->json(['message' => 'Identifiants incorrects'], 401);
+//     }
+
+//     return response()->json([
+//         'message' => 'Connexion réussie',
+//         'role' => $user->role,
+//         'user' => [
+//             'id' => $user->id,
+//             'email' => $user->email,
+//             'role' => $user->role,
+//         ],
+//     ]);
+// });
+
+Route::get('/getOlona', [OlonaController::class, 'index']);
+
 Route::post('/login', function (Request $request) {
     $email = $request->input('email');
     $password = $request->input('password');
 
-    $user = Utilisateur::where('email', $email)->first();
+    $user = Olona::where('email', $email)->first();
 
     if (!$user || $user->password !== $password) {
         return response()->json(['message' => 'Identifiants incorrects'], 401);
@@ -52,3 +78,10 @@ Route::post('/login', function (Request $request) {
         ],
     ]);
 });
+
+
+Route::get('/emplois', [EmploiDuTempsController::class, 'index']);
+Route::post('/emplois', [EmploiDuTempsController::class, 'store']);
+Route::put('/emplois/{id}', [EmploiDuTempsController::class, 'update']);
+Route::delete('/emplois/{id}', [EmploiDuTempsController::class, 'destroy']);
+Route::post('/emplois/{id}/upload', [EmploiDuTempsController::class, 'updateImage']);
