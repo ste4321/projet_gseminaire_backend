@@ -9,6 +9,7 @@ use App\Http\Controllers\OlonaController;
 use App\Models\Olona;
 // use App\Models\Utilisateur;
 use App\Http\Controllers\EmploiDuTempsController;
+use App\Http\Controllers\EnseignantController;
 
 /*
 |--------------------------------------------------------------------------
@@ -85,3 +86,8 @@ Route::post('/emplois', [EmploiDuTempsController::class, 'store']);
 Route::put('/emplois/{id}', [EmploiDuTempsController::class, 'update']);
 Route::delete('/emplois/{id}', [EmploiDuTempsController::class, 'destroy']);
 Route::post('/emplois/{id}/upload', [EmploiDuTempsController::class, 'updateImage']);
+
+
+Route::get('/enseignants', [EnseignantController::class, 'index']);
+Route::put('/enseignants/{id}', [EnseignantController::class, 'update']);
+Route::delete('/enseignants/{id}', [EnseignantController::class, 'destroy']);
