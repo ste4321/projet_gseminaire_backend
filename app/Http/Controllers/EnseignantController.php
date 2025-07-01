@@ -19,9 +19,9 @@ class EnseignantController extends Controller
         // Optionnel : validation (recommandé)
         $request->validate([
             'nom_prenom' => 'required|string|max:255',
-            'adresse' => 'required|string|max:255',
-            'mail' => 'required|email|max:255',
-            'telephone' => 'required|string|max:20',
+            'adresse' => 'nullable|string|max:255',
+            'mail' => 'nullable|email|max:255',
+            'telephone' => 'nullable|string|max:20',
         ]);
 
         $enseignant->update($request->only(['nom_prenom', 'adresse', 'mail', 'telephone']));
@@ -36,5 +36,19 @@ class EnseignantController extends Controller
         Enseignant::destroy($id);
         return response()->json(['message' => 'Supprimé']);
     }
-
+    
+    public function store(Request $request)
+    {
+        $request->validate([
+            'nom_prenom' => 'required|string|max:255',
+            'adresse' => 'nullable|string|max:255',
+            'mail' => 'nullable|email|max:255',
+            'telephone' => 'nullable|string|max:30',
+        ]);
+    
+        $enseignant = Enseignant::create($request->only(['nom_prenom', 'adresse', 'mail', 'telephone']));
+    
+        return response()->json($enseignant, 201);
+    }
+    
 }

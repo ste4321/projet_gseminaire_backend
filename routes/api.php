@@ -10,7 +10,8 @@ use App\Models\Olona;
 // use App\Models\Utilisateur;
 use App\Http\Controllers\EmploiDuTempsController;
 use App\Http\Controllers\EnseignantController;
-
+use App\Http\Controllers\AnneeAcaController;
+use App\Http\Controllers\EtudiantController;
 /*
 |--------------------------------------------------------------------------
 | API Routes
@@ -91,3 +92,9 @@ Route::post('/emplois/{id}/upload', [EmploiDuTempsController::class, 'updateImag
 Route::get('/enseignants', [EnseignantController::class, 'index']);
 Route::put('/enseignants/{id}', [EnseignantController::class, 'update']);
 Route::delete('/enseignants/{id}', [EnseignantController::class, 'destroy']);
+Route::post('/enseignants', [EnseignantController::class, 'store']);
+
+
+Route::get('/annee_aca', [AnneeAcaController::class, 'index']);
+Route::get('/etudiants', [EtudiantController::class, 'index']);
+// Route::get('/etudiants/{numero}', [EtudiantController::class, 'show']); // détails
