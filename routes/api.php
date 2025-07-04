@@ -12,6 +12,8 @@ use App\Http\Controllers\EmploiDuTempsController;
 use App\Http\Controllers\EnseignantController;
 use App\Http\Controllers\AnneeAcaController;
 use App\Http\Controllers\EtudiantController;
+use App\Http\Controllers\AnnonceController;
+
 /*
 |--------------------------------------------------------------------------
 | API Routes
@@ -98,3 +100,10 @@ Route::post('/enseignants', [EnseignantController::class, 'store']);
 Route::get('/annee_aca', [AnneeAcaController::class, 'index']);
 Route::get('/etudiants', [EtudiantController::class, 'index']);
 // Route::get('/etudiants/{numero}', [EtudiantController::class, 'show']); // détails
+
+
+
+Route::get('/annonces', [AnnonceController::class, 'index']);
+Route::post('/annonces', [AnnonceController::class, 'store']);
+Route::put('/annonces/{id}', [AnnonceController::class, 'update']);
+Route::delete('/annonces/{id}', [AnnonceController::class, 'destroy']);
