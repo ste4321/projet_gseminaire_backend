@@ -5,25 +5,19 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class Etudiant extends Model
+class Admin extends Model
 {
-    protected $table = 'etudiants';
+    protected $table = 'admins';
+
     protected $fillable = [
-        'nom_prenom',
         'id_user_cession',
+        'nom_prenom',
         'email',
         'telephone',
-        'diocese',
     ];
+
     public function userCession()
     {
         return $this->belongsTo(User::class, 'id_user_cession');
     }
-
-// public function notes()
-// {
-//     return $this->hasMany(Note::class, 'etudiant_numero', 'numero');
-// }
-
-    use HasFactory;
 }

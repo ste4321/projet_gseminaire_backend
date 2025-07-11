@@ -11,14 +11,15 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('users', function (Blueprint $table) {
+        Schema::create('notes', function (Blueprint $table) {
             $table->id();
-            $table->string('email')->unique();
-            $table->string('password');
-            $table->string('confirmation_code')->nullable();
-            $table->boolean('is_verified')->default(true);
+            $table->foreignId('id_etudiant_parcours')->constrained('etudiant_parcours')->onDelete('cascade');
+            $table->foreignId('id_matiere')->constrained('matieres')->onDelete('cascade');
+            $table->float('note')->nullable();
+            $table->string('statut')->nullable();
             $table->timestamps();
         });
+        
     }
 
     /**
@@ -26,6 +27,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('users');
+        Schema::dropIfExists('notes');
     }
 };

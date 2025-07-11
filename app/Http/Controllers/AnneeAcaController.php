@@ -8,6 +8,6 @@ class AnneeAcaController extends Controller
 {
     public function index()
     {
-        return AnneeAca::orderByDesc('annee_aca')->get();
+        return AnneeAca::orderByDesc('id')->get();
     }
 }

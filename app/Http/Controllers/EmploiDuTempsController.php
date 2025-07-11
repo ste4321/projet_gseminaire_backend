@@ -13,48 +13,6 @@ class EmploiDuTempsController extends Controller
         return Edt::orderBy('id', 'asc')->get();
     }
 
-    public function store(Request $request)
-    {
-        $request->validate([
-            'image_url' => 'required|string',
-            'semestre' => 'required|in:1,2',
-        ]);
-
-        return Edt::create($request->all());
-    }
-
-    // public function updateImage(Request $request, $id)
-    // {
-    //     $emploi = Edt::findOrFail($id);
-
-    //     if ($request->hasFile('image')) {
-    //         // Supprimer l'ancienne image si elle existe
-    //         if ($emploi->image_url) {
-    //             // Transforme /storage/edt/xxx.jpg → edt/xxx.jpg
-    //             $oldPath = str_replace('/storage/', '', $emploi->image_url);
-
-    //             // Supprimer avec le disque "public" (storage/app/public)
-    //             if (Storage::disk('public')->exists($oldPath)) {
-    //                 Storage::disk('public')->delete($oldPath);
-    //             }
-    //         }
-
-    //         // Stocker dans storage/app/public/edt
-    //         $image = $request->file('image');
-    //         $path = $image->store('edt', 'public'); // chemin ex: edt/yyy.jpg
-
-    //         // Générer l'URL visible publiquement
-    //         $url = '/storage/' . $path;
-
-    //         // Mise à jour en base
-    //         $emploi->image_url = $url;
-    //         $emploi->save();
-
-    //         return response()->json(['image_url' => $url], 200);
-    //     }
-
-    //     return response()->json(['error' => 'Aucune image fournie'], 400);
-    // }
     public function updateImage(Request $request, $id)
     {
         $emploi = Edt::findOrFail($id);
@@ -82,7 +40,26 @@ class EmploiDuTempsController extends Controller
     
         return response()->json(['error' => 'Aucune image fournie'], 400);
     }
-    
+//----------------------------------------------------------------
+public function store(Request $request)
+    {
+        $request->validate([
+            'image' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048',
+            'semestre' => 'required|integer|in:1,2',
+        ]);
+
+        if ($request->hasFile('image')) {
+            $path = $request->file('image')->store('emplois', 'public');
+            $emploi = Edt::create([
+                'image_url' => '/storage/' . $path,
+                'semestre' => $request->semestre,
+            ]);
+
+            return response()->json($emploi, 201);
+        }
+
+        return response()->json(['error' => 'Aucune image trouvée.'], 400);
+    }
 
 //------------------------------------------------------------------
     public function destroy($id)

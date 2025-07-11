@@ -3,100 +3,88 @@
 namespace App\Http\Controllers;
 
 use App\Models\Annonce;
-use App\Models\Enseignant;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
 class AnnonceController extends Controller
 {
+    // 🔹 Liste toutes les annonces avec relations
     public function index()
     {
-        return Annonce::all();
+        $annonces = Annonce::with(['niveau', 'anneeAca'])->orderByDesc('created_at')->get();
+        return response()->json($annonces);
     }
 
+    // 🔹 Créer une annonce
     public function store(Request $request)
     {
-        $isAdmin = $request->input('expediteur') === 'admin';
-
-        $rules = [
-            'titre' => 'required|string',
+        $validated = $request->validate([
+            'titre' => 'required|string|max:255',
             'description' => 'nullable|string',
-            'fichier' => 'nullable|file|mimes:zip,doc,docx,pdf|max:5120',
-        ];
-
-        if (!$isAdmin) {
-            $rules['enseignant_id'] = 'required|exists:corps_enseignant,id';
-        }
-
-        $validated = $request->validate($rules);
-
-        $fichierPath = null;
-        if ($request->hasFile('fichier')) {
-            $fichierPath = $request->file('fichier')->store('annonces', 'public');
-        }
-
-        if ($isAdmin) {
-            $expediteur = 'admin';
-        } else {
-            $enseignant = \App\Models\Enseignant::find($request->enseignant_id);
-            if (!$enseignant) {
-                return response()->json(['error' => 'Enseignant introuvable'], 404);
-            }
-            $expediteur = $enseignant->nom_prenom;
-        }
-
-        $annonce = \App\Models\Annonce::create([
-            'titre' => $request->titre,
-            'expediteur' => $expediteur,
-            'description' => $request->description,
-            'fichier' => $fichierPath,
+            'fichier' => 'nullable|file|mimes:zip,doc,docx,pdf',
+            'id_annee_aca' => 'required|exists:annee_aca,id',
+            'id_niveau' => 'required|exists:niveaux,id',
+            'expediteur' => 'required|string|max:255',
         ]);
 
+        // Gestion du fichier joint
+        if ($request->hasFile('fichier')) {
+            $path = $request->file('fichier')->store('annonces', 'public');
+            $validated['fichier'] = asset('storage/' . $path);
+        }
+
+        $annonce = Annonce::create($validated);
         return response()->json($annonce, 201);
     }
 
+    // 🔹 Affiche une seule annonce
+    public function show($id)
+    {
+        $annonce = Annonce::with(['niveau', 'anneeAca'])->findOrFail($id);
+        return response()->json($annonce);
+    }
+
+    // 🔹 Modifier une annonce
     public function update(Request $request, $id)
     {
         $annonce = Annonce::findOrFail($id);
 
-        $request->validate([
+        $validated = $request->validate([
             'titre' => 'required|string|max:255',
-            'enseignant_id' => 'required|exists:enseignants,id',
             'description' => 'nullable|string',
-            'fichier' => 'nullable|file|mimes:zip,doc,docx,pdf|max:5120',
+            'fichier' => 'nullable|file|mimes:zip,doc,docx,pdf',
+            'id_annee_aca' => 'required|exists:annee_aca,id',
+            'id_niveau' => 'required|exists:niveaux,id',
+            'expediteur' => 'required|string|max:255',
         ]);
-
-        $enseignant = Enseignant::find($request->enseignant_id);
-        if (!$enseignant) {
-            return response()->json(['error' => 'Enseignant introuvable'], 404);
-        }
 
         if ($request->hasFile('fichier')) {
-            if ($annonce->fichier && Storage::disk('public')->exists($annonce->fichier)) {
-                Storage::disk('public')->delete($annonce->fichier);
+            // Optionnel : supprimer l'ancien fichier
+            if ($annonce->fichier && str_starts_with($annonce->fichier, asset('storage/'))) {
+                $relativePath = str_replace(asset('storage/'), '', $annonce->fichier);
+                Storage::disk('public')->delete($relativePath);
             }
-            $annonce->fichier = $request->file('fichier')->store('annonces', 'public');
+
+            $path = $request->file('fichier')->store('annonces', 'public');
+            $validated['fichier'] = asset('storage/' . $path);
         }
 
-        $annonce->update([
-            'titre' => $request->titre,
-            'expediteur' => $enseignant->nom_prenom, // ✅ mise à jour du nom
-            'description' => $request->description,
-        ]);
-
+        $annonce->update($validated);
         return response()->json($annonce);
     }
 
+    // 🔹 Supprimer une annonce
     public function destroy($id)
     {
         $annonce = Annonce::findOrFail($id);
 
-        if ($annonce->fichier && Storage::disk('public')->exists($annonce->fichier)) {
-            Storage::disk('public')->delete($annonce->fichier);
+        // Supprimer le fichier s’il existe
+        if ($annonce->fichier && str_starts_with($annonce->fichier, asset('storage/'))) {
+            $relativePath = str_replace(asset('storage/'), '', $annonce->fichier);
+            Storage::disk('public')->delete($relativePath);
         }
 
         $annonce->delete();
-
-        return response()->json(['message' => 'Annonce supprimée avec succès']);
+        return response()->json(['message' => 'Annonce supprimée avec succès.'], 204);
     }
 }
