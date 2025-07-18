@@ -19,6 +19,8 @@ use App\Http\Controllers\InfoController;
 use App\Http\Controllers\NiveauController;
 use App\Http\Controllers\MatiereController;
 use App\Http\Controllers\SemestreController;
+use App\Http\Controllers\EtudiantParcoursController;
+use App\Http\Controllers\EtudiantImportController;
 
 /*
 |--------------------------------------------------------------------------
@@ -63,7 +65,7 @@ Route::post('/enseignants/{id}/cession', [EnseignantController::class, 'assignCe
 
 Route::get('/annee_aca', [AnneeAcaController::class, 'index']);
 Route::apiResource('etudiants', EtudiantController::class);
-// Route::get('/etudiants/{numero}', [EtudiantController::class, 'show']); // détails
+// Route::get('etudiants/{id_annee}/{id_niveau}', [EtudiantController::class, 'parcoursParAnneeEtNiveau']);
 
 
 
@@ -84,3 +86,7 @@ Route::apiResource('/niveaux', NiveauController::class);
 Route::apiResource('matieres', MatiereController::class);
 
 Route::apiResource('semestres', SemestreController::class);
+
+Route::get('/etudiant_parcours', [EtudiantParcoursController::class, 'index']);
+
+Route::post('/etudiants/import', [EtudiantImportController::class, 'import']);

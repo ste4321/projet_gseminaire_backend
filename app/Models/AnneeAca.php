@@ -9,5 +9,8 @@ class AnneeAca extends Model
 {
     protected $table = 'annee_aca';
     protected $fillable = ['annee_aca'];
-    use HasFactory;
+    public function parcours()
+    {
+        return $this->hasMany(EtudiantParcours::class, 'id_annee_aca');
+    }
 }

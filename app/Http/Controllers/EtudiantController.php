@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Etudiant;
 use Illuminate\Http\Request;
+use App\Models\EtudiantParcours;
 
 class EtudiantController extends Controller
 {
@@ -53,5 +54,27 @@ class EtudiantController extends Controller
         $etudiant->delete();
 
         return response()->json(['message' => 'Étudiant supprimé avec succès.']);
+    }
+
+    public function parcoursParAnneeEtNiveau($id_annee, $id_niveau)
+    {
+        $parcours = EtudiantParcours::with('etudiant')
+            ->where('id_annee_aca', $id_annee)
+            ->where('id_niveau', $id_niveau)
+            ->get();
+
+        // Transformer les données pour retourner les infos utiles
+        $result = $parcours->map(function ($p) {
+            return [
+                'id' => $p->etudiant->id,
+                'nom_prenom' => $p->etudiant->nom_prenom,
+                'matricule' => $p->etudiant->matricule,
+                'diocese' => $p->etudiant->diocese,
+                'email' => $p->etudiant->email,
+                'telephone' => $p->etudiant->telephone,
+            ];
+        });
+
+        return response()->json($result);
     }
 }

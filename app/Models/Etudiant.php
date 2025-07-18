@@ -14,12 +14,17 @@ class Etudiant extends Model
         'email',
         'telephone',
         'diocese',
+        'matricule',
     ];
     public function userCession()
     {
         return $this->belongsTo(User::class, 'id_user_cession');
     }
-
+    public function parcours()
+    {
+        return $this->hasMany(EtudiantParcours::class, 'id_etudiant');
+    }
+    
 // public function notes()
 // {
 //     return $this->hasMany(Note::class, 'etudiant_numero', 'numero');
