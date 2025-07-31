@@ -21,6 +21,7 @@ use App\Http\Controllers\MatiereController;
 use App\Http\Controllers\SemestreController;
 use App\Http\Controllers\EtudiantParcoursController;
 use App\Http\Controllers\EtudiantImportController;
+use App\Http\Controllers\NoteController;
 
 /*
 |--------------------------------------------------------------------------
@@ -83,10 +84,56 @@ Route::delete('/infos/{id}', [InfoController::class, 'destroy']);
 
 Route::apiResource('/niveaux', NiveauController::class);
 
-Route::apiResource('matieres', MatiereController::class);
+// Route::apiResource('matieres', MatiereController::class);
+// Routes pour les matières
+Route::prefix('matieres')->group(function () {
+    // Récupérer toutes les matières
+    Route::get('/', [MatiereController::class, 'index']);
+    
+    // Récupérer les matières par niveau
+    Route::get('/niveau/{niveau}', [MatiereController::class, 'getMatieresByNiveau']);
+    
+    // Récupérer les matières par semestre et niveau
+    Route::get('/semestre/{semestreId}/niveau/{niveau}', [MatiereController::class, 'getMatieresBySemestreAndNiveau']);
+    
+    // Récupérer une matière spécifique
+    Route::get('/{id}', [MatiereController::class, 'show']);
+    
+    // Créer une nouvelle matière
+    Route::post('/', [MatiereController::class, 'store']);
+    
+    // Mettre à jour une matière
+    Route::put('/{id}', [MatiereController::class, 'update']);
+    
+    // Supprimer une matière
+    Route::delete('/{id}', [MatiereController::class, 'destroy']);
+});
+
 
 Route::apiResource('semestres', SemestreController::class);
 
 Route::get('/etudiant_parcours', [EtudiantParcoursController::class, 'index']);
 
 Route::post('/etudiants/import', [EtudiantImportController::class, 'import']);
+
+// Routes pour les notes
+Route::prefix('notes')->group(function () {
+    // Récupérer les notes d'un étudiant par son parcours
+    Route::get('/etudiant-parcours/{etudiantParcoursId}', [NoteController::class, 'getNotesByEtudiantParcours']);
+    
+    // Mettre à jour les notes en lot
+    Route::post('/update-bulk', [NoteController::class, 'updateBulkNotes']);
+    
+    // Créer ou mettre à jour une note individuelle
+    Route::post('/create-or-update', [NoteController::class, 'createOrUpdateNote']);
+    
+    // Supprimer une note
+    Route::delete('/{id}', [NoteController::class, 'deleteNote']);
+    
+    // Récupérer toutes les notes d'un étudiant avec détails
+    Route::get('/etudiant/{etudiantId}', [NoteController::class, 'getDetailedNotesByEtudiant']);
+    Route::get('/etudiant/{etudiantId}/annee/{anneeAcademique}', [NoteController::class, 'getDetailedNotesByEtudiant']);
+    
+    // Calculer la moyenne d'un étudiant
+    Route::get('/moyenne/{etudiantParcoursId}', [NoteController::class, 'calculateMoyenne']);
+});

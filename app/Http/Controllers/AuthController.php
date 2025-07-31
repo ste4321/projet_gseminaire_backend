@@ -58,6 +58,21 @@ class AuthController extends Controller
             ], 401);
         }
 
+        // NOUVELLE VÉRIFICATION : Compte vérifié
+        if (!$user->is_verified) {
+            RateLimiter::hit($throttleKey, 60 * 15); // 15 minutes
+            Log::warning('Tentative de connexion avec compte non vérifié', [
+                'ip' => $ip,
+                'email' => $email,
+                'user_id' => $user->id
+            ]);
+
+            return response()->json([
+                'message' => 'Votre compte n\'est pas encore vérifié. Veuillez contacter l\'administrateur.',
+                'error_type' => 'account_not_verified'
+            ], 403);
+        }
+
         // Réinitialiser les tentatives en cas de succès
         RateLimiter::clear($throttleKey);
 
@@ -110,6 +125,7 @@ class AuthController extends Controller
                 'role' => $user->role,
                 'nom_prenom' => $nomPrenom,
                 'last_login_at' => $user->last_login_at?->toISOString(),
+                'is_verified' => $user->is_verified
             ]
         ]);
     }

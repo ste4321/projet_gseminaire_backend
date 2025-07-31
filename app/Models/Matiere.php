@@ -19,5 +19,9 @@ class Matiere extends Model
     {
         return $this->belongsTo(Semestre::class, 'id_semestre');
     }
+    public function notes()
+    {
+        return $this->hasMany(Note::class, 'id_etudiant_parcours');
+    }
 
 }

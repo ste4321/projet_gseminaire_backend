@@ -38,4 +38,9 @@ class EtudiantParcours extends Model
     {
         return $this->belongsTo(Niveau::class, 'id_niveau');
     }
+    public function notes()
+    {
+        return $this->hasMany(Note::class, 'id_etudiant_parcours');
+    }
+
 }
