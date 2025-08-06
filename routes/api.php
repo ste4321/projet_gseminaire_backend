@@ -22,6 +22,7 @@ use App\Http\Controllers\SemestreController;
 use App\Http\Controllers\EtudiantParcoursController;
 use App\Http\Controllers\EtudiantImportController;
 use App\Http\Controllers\NoteController;
+use App\Http\Controllers\NoteImportController;
 
 /*
 |--------------------------------------------------------------------------
@@ -137,3 +138,5 @@ Route::prefix('notes')->group(function () {
     // Calculer la moyenne d'un étudiant
     Route::get('/moyenne/{etudiantParcoursId}', [NoteController::class, 'calculateMoyenne']);
 });
+
+Route::post('/notes/import', [NoteImportController::class, 'import']);
