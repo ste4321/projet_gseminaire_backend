@@ -23,6 +23,7 @@ use App\Http\Controllers\EtudiantParcoursController;
 use App\Http\Controllers\EtudiantImportController;
 use App\Http\Controllers\NoteController;
 use App\Http\Controllers\NoteImportController;
+use App\Http\Controllers\UserCessionController;
 
 /*
 |--------------------------------------------------------------------------
@@ -140,3 +141,8 @@ Route::prefix('notes')->group(function () {
 });
 
 Route::post('/notes/import', [NoteImportController::class, 'import']);
+
+Route::get('/user-cessions', [UserCessionController::class, 'index']);
+Route::get('/user-cessions/stats', [UserCessionController::class, 'stats']); // Avant {id}
+Route::patch('/user-cessions/bulk-toggle', [UserCessionController::class, 'bulkToggle']); // Avant {id}
+Route::patch('/user-cessions/{id}/toggle', [UserCessionController::class, 'toggle']); // Après les routes spécifiques

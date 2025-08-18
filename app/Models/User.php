@@ -23,7 +23,6 @@ class User extends Authenticatable
         'email',
         'password',
         'is_verified',
-        'confirmation_code', 
         'role',
     ];
     protected $casts = [

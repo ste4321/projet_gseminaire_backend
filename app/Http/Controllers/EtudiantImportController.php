@@ -7,68 +7,61 @@ use App\Models\Etudiant;
 use App\Models\AnneeAca;
 use App\Models\Niveau;
 use App\Models\EtudiantParcours;
+use App\Models\Password;
+use App\Models\User;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use Illuminate\Support\Facades\Hash;
 
 class EtudiantImportController extends Controller
 {
     public function import(Request $request)
     {
-        // Augmenter les limites pour les gros imports
-        ini_set('max_execution_time', 300); // 5 minutes
+        ini_set('max_execution_time', 300);
         ini_set('memory_limit', '512M');
-        
+
         try {
             $file = $request->file('file');
             $filename = $file->getClientOriginalName();
 
-            // Extraire niveau et année depuis le nom de fichier
             preg_match('/Etudiant_(L[1-3])_([0-9]{4}-[0-9]{4})/', $filename, $matches);
             if (count($matches) !== 3) {
                 return response()->json([
                     'message' => 'Nom de fichier invalide. Format attendu : Etudiant_LX_YYYY-YYYY.xlsx'
                 ], 400);
             }
-            
+
             $niveauCode = $matches[1];
             $anneeLabel = $matches[2];
 
-            // Lire le fichier Excel
             $spreadsheet = IOFactory::load($file->getPathname());
             $sheet = $spreadsheet->getActiveSheet();
             $rows = $sheet->toArray(null, true, true, true);
 
-            // Obtenir ou créer l'année académique
             $annee = AnneeAca::firstOrCreate(['annee_aca' => $anneeLabel]);
-
-            // Obtenir l'ID du niveau
             $niveau = Niveau::where('niveau', $niveauCode)->firstOrFail();
 
-            $totalRows = count($rows) - 1; // -1 pour exclure l'en-tête
+            $totalRows = count($rows) - 1;
             $processedRows = 0;
             $errorRows = [];
 
             DB::beginTransaction();
 
-            // Traitement par batch pour optimiser les performances
             $batchSize = 50;
             $chunks = array_chunk(array_slice($rows, 1), $batchSize);
 
             foreach ($chunks as $chunkIndex => $chunk) {
-                $etudiants = [];
-                $parcours = [];
-
                 foreach ($chunk as $index => $row) {
                     $globalIndex = ($chunkIndex * $batchSize) + $index + 1;
-                    
+
                     $nomPrenom = trim($row['A'] ?? '');
                     $matricule = trim($row['B'] ?? '');
                     $diocese = trim($row['C'] ?? '');
                     $email = trim($row['D'] ?? '');
                     $telephone = trim($row['E'] ?? '');
 
-                    // Nettoyage de caractères invisibles
                     $matricule = preg_replace('/[\x00-\x1F\x7F\xA0]/u', '', $matricule);
 
                     if (empty($matricule) || empty($nomPrenom)) {
@@ -76,11 +69,10 @@ class EtudiantImportController extends Controller
                         continue;
                     }
 
-                    // Vérifier si l'étudiant existe déjà
                     $existingEtudiant = Etudiant::where('matricule', $matricule)->first();
-                    
+                    $etudiantId = null;
+
                     if ($existingEtudiant) {
-                        // Mettre à jour les infos existantes
                         $existingEtudiant->update([
                             'nom_prenom' => $nomPrenom,
                             'email' => $email,
@@ -88,15 +80,55 @@ class EtudiantImportController extends Controller
                             'diocese' => $diocese
                         ]);
                         $etudiantId = $existingEtudiant->id;
+
+                        // Vérifier s'il a un user_cession lié, sinon créer
+                        if (!$existingEtudiant->id_user_cession) {
+                            $password = Str::random(6);
+                            $hashedPassword = Hash::make($password);
+                            $user = User::create([
+                                'email' => $email,
+                                'password' => bcrypt($password),
+                                'is_verified' => false,
+                                'role' => 'etudiant'
+                            ]);
+
+                            Password::create([
+                                'id_user_cession' => $user->id,
+                                'password' => $password,
+                                'psw_scrypt' => $hashedPassword
+                            ]);
+
+                            $existingEtudiant->update([
+                                'id_user_cession' => $user->id
+                            ]);
+                        }
+
                     } else {
-                        // Créer un nouvel étudiant
+                        // Créer user_cession
+                        $password = Str::random(6);
+                        $user = User::create([
+                            'email' => $email,
+                            'password' => bcrypt($password),
+                            'is_verified' => false,
+                            'role' => 'etudiant'
+                        ]);
+
+                        Password::create([
+                            'id_user_cession' => $user->id,
+                            'password' => $password,
+                            'psw_scrypt' => $password
+                        ]);
+
+                        // Créer l'étudiant
                         $etudiant = Etudiant::create([
                             'matricule' => $matricule,
                             'nom_prenom' => $nomPrenom,
                             'email' => $email,
                             'telephone' => $telephone,
-                            'diocese' => $diocese
+                            'diocese' => $diocese,
+                            'id_user_cession' => $user->id
                         ]);
+
                         $etudiantId = $etudiant->id;
                     }
 
@@ -121,7 +153,6 @@ class EtudiantImportController extends Controller
                     $processedRows++;
                 }
 
-                // Log du progrès
                 Log::info("Batch " . ($chunkIndex + 1) . " traité : {$processedRows}/{$totalRows} étudiants");
             }
 
@@ -146,7 +177,7 @@ class EtudiantImportController extends Controller
             Log::error("Erreur lors de l'import : " . $e->getMessage(), [
                 'trace' => $e->getTraceAsString()
             ]);
-            
+
             return response()->json([
                 'message' => 'Erreur lors de l\'importation : ' . $e->getMessage(),
                 'exception' => get_class($e),
@@ -155,4 +186,5 @@ class EtudiantImportController extends Controller
             ], 500);
         }
     }
+
 }
