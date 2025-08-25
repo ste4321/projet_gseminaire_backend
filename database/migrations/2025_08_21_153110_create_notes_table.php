@@ -11,14 +11,14 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('passwords', function (Blueprint $table) {
+        Schema::create('notes', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('id_user_cession')->constrained('user_cession')->onDelete('cascade');
-            $table->string('password'); // clair
-            $table->string('psw_scrypt'); // hashé
+            $table->foreignId('id_etudiant_parcours')->constrained('etudiant_parcours')->onDelete('cascade');
+            $table->foreignId('id_matiere')->constrained('matieres')->onDelete('cascade');
+            $table->float('note')->nullable();
+            $table->string('statut')->nullable();
             $table->timestamps();
         });
-        
     }
 
     /**
@@ -26,6 +26,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('passwords');
+        Schema::dropIfExists('notes');
     }
 };

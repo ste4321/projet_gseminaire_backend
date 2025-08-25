@@ -13,10 +13,12 @@ return new class extends Migration
     {
         Schema::create('admins', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('id_user_cession')->constrained('user_cession')->onDelete('cascade');
-            $table->string('nom_prenom');
-            $table->string('email');
-            $table->string('telephone')->nullable();
+            $table->foreignId('id_user_cession')
+                  ->constrained('user_cession')
+                  ->cascadeOnDelete();
+            $table->string('nom_prenom', 255);
+            $table->string('email', 255);
+            $table->string('telephone', 255)->nullable();
             $table->timestamps();
         });
     }

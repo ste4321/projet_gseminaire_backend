@@ -11,16 +11,18 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('semestres', function (Blueprint $table) {
+        Schema::create('niveaux_', function (Blueprint $table) {
             $table->id();
-            $table->string('semestre');
-            $table->string('code_semestre')->nullable();
+            $table->string('niveau');
             $table->timestamps();
         });
     }
 
+    /**
+     * Reverse the migrations.
+     */
     public function down(): void
     {
-        Schema::dropIfExists('semestres');
+        Schema::dropIfExists('niveaux');
     }
 };

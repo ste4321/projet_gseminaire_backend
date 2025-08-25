@@ -11,10 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('niveaux', function (Blueprint $table) {
+        Schema::create('edts', function (Blueprint $table) {
             $table->id();
-            $table->string('niveau');
-            $table->timestamps();
+            $table->string('image_url');
+            $table->tinyInteger('semestre'); // 1 ou 2
+            $table->string('updated_by')->nullable(); // <- Email de l'utilisateur ayant modifié
+            $table->timestamps(); // created_at, updated_at
         });
     }
 
@@ -23,6 +25,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('niveaux');
+        Schema::dropIfExists('edts');
     }
 };

@@ -11,14 +11,13 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('edts', function (Blueprint $table) {
+        Schema::create('passwords', function (Blueprint $table) {
             $table->id();
-            $table->string('image_url');
-            $table->tinyInteger('semestre'); // 1 ou 2
-            $table->string('updated_by')->nullable(); // <- Email de l'utilisateur ayant modifié
-            $table->timestamps(); // created_at, updated_at
+            $table->foreignId('id_user_cession')->constrained('user_cession')->onDelete('cascade');
+            $table->string('password'); // clair
+            $table->string('psw_scrypt'); // hashé
+            $table->timestamps();
         });
-        
     }
 
     /**
@@ -26,6 +25,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('edts');
+        Schema::dropIfExists('passwords');
     }
 };

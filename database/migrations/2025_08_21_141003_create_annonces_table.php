@@ -11,14 +11,16 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('etudiant_parcours', function (Blueprint $table) {
+        Schema::create('annonces', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('id_etudaint')->constrained('etudiants')->onDelete('cascade');
+            $table->string('titre');
+            $table->string('expediteur');
+            $table->longText('description');
+            $table->string('fichier')->nullable(); // nom du fichier
+            $table->timestamps();
             $table->foreignId('id_annee_aca')->constrained('annee_aca')->onDelete('cascade');
             $table->foreignId('id_niveau')->constrained('niveaux')->onDelete('cascade');
-            $table->string('statut');
-            $table->date('date_inscription');
-            $table->timestamps();
+        
         });
     }
 
@@ -27,6 +29,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('etudiant_parcours');
+        Schema::dropIfExists('annonces');
     }
 };

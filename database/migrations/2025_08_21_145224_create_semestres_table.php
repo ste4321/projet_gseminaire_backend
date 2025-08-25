@@ -11,7 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('annee_aca', function (Blueprint $table) {
+        Schema::create('semestres', function (Blueprint $table) {
+            $table->id();
+            $table->string('semestre');
+            $table->string('code_semestre')->nullable();
             $table->timestamps();
         });
     }
@@ -21,8 +24,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('annee_aca', function (Blueprint $table) {
-            //
-        });
+        Schema::dropIfExists('semestres');
     }
 };

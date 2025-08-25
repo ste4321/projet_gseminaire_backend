@@ -11,12 +11,9 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('annonces', function (Blueprint $table) {
+        Schema::create('annee_aca', function (Blueprint $table) {
             $table->id();
-            $table->string('titre');
-            $table->string('expediteur');
-            $table->longText('description');
-            $table->string('fichier')->nullable(); // nom du fichier
+            $table->string('annee_aca');
             $table->timestamps();
         });
     }
@@ -26,6 +23,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('annonces');
+        Schema::dropIfExists('annee_aca');
     }
 };
