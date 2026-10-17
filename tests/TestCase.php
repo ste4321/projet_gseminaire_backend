@@ -39,6 +39,12 @@ abstract class TestCase extends BaseTestCase
         ]);
     }
 
+    /** Demande un code de confirmation (publier_notes, publier_actualite) pour l'utilisateur connecté */
+    protected function codeConfirmation(string $action): string
+    {
+        return $this->postJson('/api/confirmations', ['action' => $action])->assertCreated()->json('code');
+    }
+
     /** Année académique + niveaux L1 à L3 */
     protected function referentiel(): array
     {

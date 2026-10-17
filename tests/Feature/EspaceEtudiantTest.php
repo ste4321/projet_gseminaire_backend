@@ -170,8 +170,9 @@ class EspaceEtudiantTest extends TestCase
         $this->actingAs($this->admin(), 'sanctum');
         $cible = ['id_annee_aca' => $this->annee->id, 'id_niveau' => $this->niveaux['L1']->id, 'id_semestre' => $this->s1->id];
 
-        $this->postJson('/api/notes/publications', $cible)->assertCreated();
-        $this->postJson('/api/notes/publications', $cible)->assertOk(); // déjà publié : pas de doublon
+        $this->postJson('/api/notes/publications', $cible + ['code_confirmation' => $this->codeConfirmation('publier_notes')])->assertCreated();
+        // déjà publié : pas de doublon
+        $this->postJson('/api/notes/publications', $cible + ['code_confirmation' => $this->codeConfirmation('publier_notes')])->assertOk();
         $this->assertSame(1, PublicationNote::count());
 
         $etat = $this->getJson("/api/notes/publications?annee={$this->annee->id}&niveau={$this->niveaux['L1']->id}")->assertOk()->json();

@@ -138,26 +138,8 @@ class AuthController extends Controller
         ]);
     }
 
-    /**
-     * Données utilisateur renvoyées au frontend (jamais le mot de passe).
-     */
     private function userPayload(User $user): array
     {
-        $profil = match ($user->role) {
-            'admin'    => Admin::where('id_user_cession', $user->id)->first(),
-            'prof'     => Enseignant::where('id_user_cession', $user->id)->first(),
-            'etudiant' => Etudiant::where('id_user_cession', $user->id)->first(),
-            default    => null,
-        };
-
-        return [
-            'id'          => $user->id,
-            'email'       => $user->email,
-            'role'        => $user->role,
-            'nom_prenom'  => $profil?->nom_prenom,
-            'profil_id'   => $profil?->id,
-            'is_verified' => (bool) $user->is_verified,
-            'must_change_password' => (bool) $user->must_change_password,
-        ];
+        return $user->payloadSession();
     }
 }

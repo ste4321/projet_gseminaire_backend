@@ -17,7 +17,8 @@ class ActualitesTempsReelTest extends TestCase
         Event::fake([ActualiteMiseAJour::class]);
         $this->actingAs($this->admin(), 'sanctum');
 
-        $id = $this->postJson('/api/infos', ['auteur' => 'Père Rodolphe', 'titre' => 'Fête de la Toussaint', 'description' => 'Messe à 9 h'])
+        $id = $this->postJson('/api/infos', ['auteur' => 'Père Rodolphe', 'titre' => 'Fête de la Toussaint', 'description' => 'Messe à 9 h',
+            'code_confirmation' => $this->codeConfirmation('publier_actualite')])
             ->assertCreated()
             ->json('id');
         $this->putJson("/api/infos/{$id}", ['auteur' => 'Père Rodolphe', 'titre' => 'Fête de la Toussaint (horaire)', 'description' => 'Messe à 10 h'])
@@ -55,7 +56,8 @@ class ActualitesTempsReelTest extends TestCase
         ]);
         $this->actingAs($this->admin(), 'sanctum');
 
-        $this->postJson('/api/infos', ['auteur' => 'A', 'titre' => 'Hors ligne', 'description' => 'D'])->assertCreated();
+        $code = $this->codeConfirmation('publier_actualite');
+        $this->postJson('/api/infos', ['auteur' => 'A', 'titre' => 'Hors ligne', 'description' => 'D', 'code_confirmation' => $code])->assertCreated();
         $this->assertSame(1, Info::where('titre', 'Hors ligne')->count());
     }
 }

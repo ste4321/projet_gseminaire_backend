@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Events\ActualiteMiseAJour;
 use App\Models\Info;
+use App\Services\ConfirmationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -14,9 +15,13 @@ class InfoController extends Controller
         return Info::latest()->get();
     }
 
-    public function store(Request $request)
+    /** Publication : exige le code de confirmation émis par POST /api/confirmations (action publier_actualite) */
+    public function store(Request $request, ConfirmationService $confirmations)
     {
-        $info = Info::create($this->validated($request));
+        $donnees = $this->validated($request);
+        $confirmations->exiger($request->user(), 'publier_actualite', $request->input('code_confirmation'));
+
+        $info = Info::create($donnees);
         $this->diffuser(ActualiteMiseAJour::CREEE, $info);
 
         return response()->json($info, 201);
