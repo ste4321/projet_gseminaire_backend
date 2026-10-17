@@ -42,8 +42,10 @@ return [
                 'scheme' => env('REVERB_SCHEME', 'https'),
                 'useTLS' => env('REVERB_SCHEME', 'https') === 'https',
             ],
+            // Délais courts : si Reverb est arrêté, la publication d'une actualité ne doit pas traîner
             'client_options' => [
-                // Guzzle client options: https://docs.guzzlephp.org/en/stable/request-options.html
+                'connect_timeout' => 0.5,
+                'timeout' => 2,
             ],
         ],
 

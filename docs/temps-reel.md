@@ -11,7 +11,8 @@ Gestion ──POST /api/infos──▶ Laravel ──événement──▶ Reverb
 - Événement : `App\Events\ActualiteMiseAJour`, canal public `actualites`, nom `actualite.maj`.
 - Seuls les champs publics de l'actualité sont diffusés (les mêmes que `GET /api/infos`).
 - Si Reverb est arrêté, la publication **réussit quand même** (avertissement dans les logs)
-  et le site vitrine se met à jour toutes les 2 minutes et quand le visiteur revient sur l'onglet.
+  et le site vitrine se met à jour toutes les 30 secondes et quand le visiteur revient sur l'onglet
+  (la nouvelle actualité est alors annoncée de la même façon).
 
 ## En local
 
@@ -90,7 +91,7 @@ REACT_APP_REVERB_PORT=443
 REACT_APP_REVERB_SCHEME=https
 ```
 
-Puis `npm run build`. Sans clé, le site fonctionne mais sans direct (mise à jour toutes les 2 minutes).
+Puis `npm run build`. Sans clé, le site fonctionne mais sans direct (mise à jour toutes les 30 secondes).
 
 ### Vérifier
 
