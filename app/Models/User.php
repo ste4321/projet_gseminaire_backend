@@ -24,9 +24,13 @@ class User extends Authenticatable
         'password',
         'is_verified',
         'role',
+        'must_change_password',
+        'password_changed_at',
     ];
     protected $casts = [
         'is_verified' => 'boolean',
+        'must_change_password' => 'boolean',
+        'password_changed_at' => 'datetime',
     ];
     public function hasLinkedProfile()
     {

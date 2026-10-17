@@ -59,6 +59,7 @@ class EtudiantImportController extends Controller
         $totalRows = 0;
         $processedRows = 0;
         $createdAccounts = 0;
+        $comptes = []; // identifiants provisoires, renvoyés une seule fois à l'admin
         $errors = [];
 
         foreach ($rows as $index => $row) {
@@ -86,7 +87,7 @@ class EtudiantImportController extends Controller
 
             try {
                 // Une transaction par ligne : une ligne en erreur n'annule pas tout l'import
-                DB::transaction(function () use ($matricule, $nomPrenom, $diocese, $email, $telephone, $annee, $niveau, &$createdAccounts) {
+                DB::transaction(function () use ($matricule, $nomPrenom, $diocese, $email, $telephone, $annee, $niveau, &$createdAccounts, &$comptes) {
                     $etudiant = Etudiant::where('matricule', $matricule)->first();
 
                     // Email déjà pris par un autre étudiant : on garde l'étudiant, sans cet email
@@ -112,9 +113,15 @@ class EtudiantImportController extends Controller
                     }
 
                     if (!$etudiant->id_user_cession) {
-                        [$user] = $this->accounts->create('etudiant', $email, $matricule);
+                        [$user, $motDePasse] = $this->accounts->create('etudiant', $email, $matricule);
                         $etudiant->update(['id_user_cession' => $user->id]);
                         $createdAccounts++;
+                        $comptes[] = [
+                            'matricule'    => $matricule,
+                            'nom_prenom'   => $nomPrenom,
+                            'email'        => $user->email,
+                            'mot_de_passe' => $motDePasse,
+                        ];
                     }
 
                     EtudiantParcours::firstOrCreate(
@@ -146,6 +153,7 @@ class EtudiantImportController extends Controller
             'total_rows'     => $totalRows,
             'processed_rows' => $processedRows,
             'created_accounts' => $createdAccounts,
+            'comptes'        => $comptes,
             'success_rate'   => round(($processedRows / $totalRows) * 100, 2) . '%',
             'errors'         => $errors,
             'error_count'    => count($errors),

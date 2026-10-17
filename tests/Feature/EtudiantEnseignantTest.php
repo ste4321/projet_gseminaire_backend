@@ -4,12 +4,12 @@ namespace Tests\Feature;
 
 use App\Models\Enseignant;
 use App\Models\Etudiant;
-use App\Models\Password;
 use App\Models\User;
 use App\Services\AccountService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Tests\TestCase;
@@ -43,7 +43,8 @@ class EtudiantEnseignantTest extends TestCase
 
         $user = User::where('email', 'm010@test.local')->firstOrFail();
         $this->assertTrue(Hash::check($res->json('mot_de_passe'), $user->password));
-        $this->assertTrue(Hash::check($res->json('mot_de_passe'), Password::where('id_user_cession', $user->id)->value('psw_scrypt')));
+        $this->assertTrue($user->must_change_password);
+        $this->assertFalse(Schema::hasTable('passwords'), 'Plus aucun mot de passe en clair en base');
     }
 
     public function test_email_deja_utilise_refuse_proprement(): void
@@ -118,6 +119,8 @@ class EtudiantEnseignantTest extends TestCase
             ->assertJsonPath('total_rows', 4)
             ->assertJsonPath('processed_rows', 3)
             ->assertJsonPath('created_accounts', 3)
+            ->assertJsonCount(3, 'comptes')
+            ->assertJsonStructure(['comptes' => [['matricule', 'nom_prenom', 'email', 'mot_de_passe']]])
             ->assertJsonPath('error_count', 2);
 
         $this->assertSame(3, Etudiant::whereNotNull('id_user_cession')->count());

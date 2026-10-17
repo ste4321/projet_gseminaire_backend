@@ -27,6 +27,7 @@ class UserCessionController extends Controller
                 'user_cession.email', 
                 'user_cession.role',
                 'user_cession.is_verified',
+                'user_cession.must_change_password',
                 'user_cession.created_at',
                 'user_cession.updated_at'
             ]);
@@ -56,6 +57,7 @@ class UserCessionController extends Controller
                     'email' => $u->email,
                     'role' => $u->role,
                     'is_verified' => (bool) $u->is_verified,
+                    'must_change_password' => (bool) $u->must_change_password,
                     'nom_prenom' => $profile?->nom_prenom,
                     'telephone' => $profile?->telephone,
                     'created_at' => $u->created_at,

@@ -157,6 +157,7 @@ class AuthController extends Controller
             'nom_prenom'  => $profil?->nom_prenom,
             'profil_id'   => $profil?->id,
             'is_verified' => (bool) $user->is_verified,
+            'must_change_password' => (bool) $user->must_change_password,
         ];
     }
 }
