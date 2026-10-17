@@ -19,8 +19,11 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => ['http://localhost:3000',
-                        'http://localhost:3001',],
+    // Origines autorisées, séparées par des virgules (ex : gestion + site vitrine en production)
+    'allowed_origins' => array_filter(array_map('trim', explode(',', env(
+        'CORS_ALLOWED_ORIGINS',
+        'http://localhost:3000,http://localhost:3001'
+    )))),
 
     'allowed_origins_patterns' => [],
 

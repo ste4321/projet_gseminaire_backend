@@ -45,4 +45,14 @@ class Handler extends ExceptionHandler
             //
         });
     }
+
+    /**
+     * Toutes les routes /api répondent en JSON (401, 403, 404, 422, 500...),
+     * même si le client n'envoie pas l'en-tête Accept: application/json.
+     * Avec APP_DEBUG=false, Laravel masque le détail des erreurs 500.
+     */
+    protected function shouldReturnJson($request, Throwable $e): bool
+    {
+        return $request->is('api/*') || parent::shouldReturnJson($request, $e);
+    }
 }
