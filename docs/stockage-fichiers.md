@@ -1,4 +1,4 @@
-# Fichiers envoyés (emplois du temps, images des actualités, pièces jointes)
+# Fichiers envoyés (emplois du temps, pièces jointes des annonces)
 
 Les fichiers sont enregistrés dans `storage/app/public/…` (disque Laravel `public`)
 et la base ne garde que leur chemin public, par exemple `/storage/edt/abc.jpg`.

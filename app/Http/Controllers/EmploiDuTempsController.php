@@ -16,6 +16,9 @@ use Illuminate\Support\Facades\Storage;
  */
 class EmploiDuTempsController extends Controller
 {
+    /** Nombre maximal d'images par semestre (au-delà, supprimer ou remplacer une image existante) */
+    public const MAX_PAR_SEMESTRE = 5;
+
     private const REGLES_IMAGE = 'required|image|mimes:jpeg,png,jpg,webp|max:5120';
     private const MESSAGES = [
         'image.required' => 'Veuillez choisir une image.',
@@ -51,6 +54,13 @@ class EmploiDuTempsController extends Controller
             'image'    => self::REGLES_IMAGE,
             'semestre' => 'required|integer|in:1,2',
         ], self::MESSAGES);
+
+        if (Edt::where('semestre', $request->semestre)->count() >= self::MAX_PAR_SEMESTRE) {
+            return response()->json([
+                'message' => 'Ce semestre a déjà ' . self::MAX_PAR_SEMESTRE . " images d'emploi du temps. "
+                    . "Supprimez ou remplacez une image existante.",
+            ], 422);
+        }
 
         $emploi = Edt::create([
             'image_url'  => $this->enregistrer($request),

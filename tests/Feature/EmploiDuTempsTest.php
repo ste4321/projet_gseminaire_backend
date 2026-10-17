@@ -36,6 +36,23 @@ class EmploiDuTempsTest extends TestCase
         $this->assertSame(0, Edt::count());
     }
 
+    public function test_cinq_images_maximum_par_semestre(): void
+    {
+        Storage::fake('public');
+        $this->actingAs($this->admin(), 'sanctum');
+
+        for ($i = 0; $i < 5; $i++) {
+            $this->postJson('/api/emplois', ['image' => UploadedFile::fake()->image("edt{$i}.jpg"), 'semestre' => 1])->assertCreated();
+        }
+        $this->postJson('/api/emplois', ['image' => UploadedFile::fake()->image('edt6.jpg'), 'semestre' => 1])
+            ->assertStatus(422)
+            ->assertJsonPath('message', fn ($m) => str_contains($m, '5 images'));
+        // L'autre semestre n'est pas concerné
+        $this->postJson('/api/emplois', ['image' => UploadedFile::fake()->image('s2.jpg'), 'semestre' => 2])->assertCreated();
+        $this->assertSame(5, Edt::where('semestre', 1)->count());
+        $this->assertCount(6, Storage::disk('public')->files('edt')); // 5 (S1) + 1 (S2) : l'image refusée n'est pas stockée
+    }
+
     public function test_refuse_un_fichier_qui_n_est_pas_une_image(): void
     {
         Storage::fake('public');
