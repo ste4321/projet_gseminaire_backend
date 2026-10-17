@@ -5,14 +5,13 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\AnneeAca;
 use App\Models\Annonce;
-use App\Models\Edt;
 use App\Models\Enseignant;
 use App\Models\Etudiant;
 use App\Models\EtudiantParcours;
 use App\Models\Matiere;
 use App\Models\Niveau;
 use App\Models\Note;
-use App\Models\Semestre;
+use App\Models\PublicationNote;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -92,22 +91,54 @@ class DashboardController extends Controller
                 'saisies'   => $notesSaisies,
                 'attendues' => $notesAttendues,
             ],
-            // Mise en route : ce qui manque pour que l'application soit utilisable
-            'configuration' => [
-                'annees'          => $annees->count(),
-                'niveaux'         => Niveau::count(),
-                'semestres'       => Semestre::count(),
-                'matieres'        => Matiere::count(),
-                'emplois_du_temps' => Edt::count(),
-            ],
+            // Notes par niveau et par semestre : avancement de la saisie et publication (bloc « À faire »)
+            'publications' => $annee ? $this->publications($annee->id) : [],
             'annonces_recentes' => Annonce::with('niveau:id,niveau')
                 ->latest()
-                ->limit(5)
-                ->get(['id', 'titre', 'expediteur', 'created_at', 'id_niveau']),
+                ->limit(4)
+                ->get(['id', 'titre', 'description', 'expediteur', 'created_at', 'id_niveau']),
 
             // Compatibilité avec l'ancien format
             'total_etudiants' => Etudiant::count(),
             'total_profs'     => Enseignant::count(),
         ]);
+    }
+
+    /** Pour chaque niveau ayant des inscrits : semestres, notes saisies / attendues, publication */
+    private function publications(int $anneeId): array
+    {
+        $publies = PublicationNote::where('id_annee_aca', $anneeId)
+            ->get(['id_niveau', 'id_semestre'])
+            ->map(fn ($p) => "{$p->id_niveau}-{$p->id_semestre}")
+            ->flip();
+
+        $lignes = [];
+        foreach (Niveau::orderBy('niveau')->get(['id', 'niveau']) as $niveau) {
+            $parcoursIds = EtudiantParcours::where('id_annee_aca', $anneeId)->where('id_niveau', $niveau->id)->pluck('id');
+            if ($parcoursIds->isEmpty()) {
+                continue;
+            }
+            $matieres = Matiere::with('semestre:id,semestre')
+                ->where('id_niveau', $niveau->id)
+                ->whereNotNull('id_semestre')
+                ->orderBy('id_semestre')
+                ->get(['id', 'id_semestre'])
+                ->groupBy('id_semestre');
+
+            foreach ($matieres as $idSemestre => $liste) {
+                $lignes[] = [
+                    'niveau'          => $niveau->niveau,
+                    'semestre'        => $liste->first()->semestre?->semestre,
+                    'notes_saisies'   => Note::whereIn('id_etudiant_parcours', $parcoursIds)
+                        ->whereIn('id_matiere', $liste->pluck('id'))
+                        ->whereNotNull('note')
+                        ->count(),
+                    'notes_attendues' => $liste->count() * $parcoursIds->count(),
+                    'publie'          => $publies->has("{$niveau->id}-{$idSemestre}"),
+                ];
+            }
+        }
+
+        return $lignes;
     }
 }

@@ -6,6 +6,7 @@ use App\Models\Etudiant;
 use App\Models\EtudiantParcours;
 use App\Models\Matiere;
 use App\Models\Note;
+use App\Models\Semestre;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -21,7 +22,7 @@ class DashboardTest extends TestCase
             ->assertOk()
             ->assertJsonPath('annee', null)
             ->assertJsonPath('etudiants.inscrits', 0)
-            ->assertJsonPath('configuration.niveaux', 0);
+            ->assertJsonPath('publications', []);
     }
 
     public function test_statistiques_reelles_de_l_annee(): void
@@ -30,9 +31,10 @@ class DashboardTest extends TestCase
         $this->actingAs($this->admin(), 'sanctum');
         $this->user('prof', verified: false);
 
+        $semestre = Semestre::create(['semestre' => 'Semestre 1', 'code_semestre' => 'S1']);
         $matiere = Matiere::create([
             'matiere' => 'Latin', 'heures' => 20, 'id_niveau' => $niveaux['L1']->id,
-            'code_matiere' => 'LAT', 'coefficient' => '1',
+            'code_matiere' => 'LAT', 'coefficient' => '1', 'id_semestre' => $semestre->id,
         ]);
 
         foreach ([['A1', 'Antsirabe', 'L1'], ['A2', 'Antsirabe', 'L1'], ['A3', '', 'L2']] as [$matricule, $diocese, $niveau]) {
@@ -55,6 +57,10 @@ class DashboardTest extends TestCase
             ->assertJsonPath('etudiants.par_diocese.1', ['diocese' => 'Non renseigné', 'total' => 1])
             ->assertJsonPath('comptes.prof.inactifs', 1)
             ->assertJsonPath('notes.saisies', 1)       // la note 0/20 compte
-            ->assertJsonPath('notes.attendues', 2);    // 2 inscrits en L1 × 1 matière
+            ->assertJsonPath('notes.attendues', 2)     // 2 inscrits en L1 × 1 matière
+            ->assertJsonPath('publications.0.niveau', 'L1')
+            ->assertJsonPath('publications.0.notes_saisies', 1)
+            ->assertJsonPath('publications.0.notes_attendues', 2)
+            ->assertJsonPath('publications.0.publie', false);
     }
 }
