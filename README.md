@@ -1,3 +1,14 @@
+# API GSTF — Grand Séminaire de Théologie Faliarivo
+
+API Laravel utilisée par l'application de gestion et par le site vitrine.
+
+- **Mise en production et mises à jour : [docs/mise-en-production.md](docs/mise-en-production.md)** (dont `php artisan storage:link`, indispensable pour les images)
+- Fichiers envoyés (emplois du temps, pièces jointes) : [docs/stockage-fichiers.md](docs/stockage-fichiers.md)
+- Actualités en direct (Reverb) : [docs/temps-reel.md](docs/temps-reel.md)
+- Tests : `php artisan test` (base dédiée `db_gestionnaire_test`, jamais la base de travail)
+
+---
+
 <p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
 
 <p align="center">

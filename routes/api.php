@@ -18,6 +18,8 @@ use App\Http\Controllers\EtudiantImportController;
 use App\Http\Controllers\NoteController;
 use App\Http\Controllers\NoteImportController;
 use App\Http\Controllers\PasswordController;
+use App\Http\Controllers\PublicationNoteController;
+use App\Http\Controllers\EspaceEtudiantController;
 use App\Http\Controllers\UserCessionController;
 
 /*
@@ -55,6 +57,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/annee_aca', [AnneeAcaController::class, 'index']);
         Route::get('/niveaux', [NiveauController::class, 'index']);
         Route::get('/semestres', [SemestreController::class, 'index']);
+    });
+
+    // Espace étudiant : uniquement ses propres données
+    Route::middleware('role:etudiant')->prefix('etudiant')->group(function () {
+        Route::get('/parcours', [EspaceEtudiantController::class, 'parcours']);
+        Route::get('/releve', [EspaceEtudiantController::class, 'releve']);
     });
 
     // ─── 3. Administration ────────────────────────────────────────────────
@@ -105,13 +113,17 @@ Route::middleware('auth:sanctum')->group(function () {
         // Notes (import déclaré avant les routes paramétrées)
         Route::prefix('notes')->group(function () {
             Route::post('/import', [NoteImportController::class, 'import']);
+            Route::get('/publications', [PublicationNoteController::class, 'index']);
+            Route::post('/publications', [PublicationNoteController::class, 'store']);
+            Route::delete('/publications', [PublicationNoteController::class, 'destroy']);
             Route::get('/etudiant-parcours/{etudiantParcoursId}', [NoteController::class, 'getNotesByEtudiantParcours']);
             Route::post('/update-bulk', [NoteController::class, 'updateBulkNotes']);
             Route::post('/create-or-update', [NoteController::class, 'createOrUpdateNote']);
-            Route::delete('/{id}', [NoteController::class, 'deleteNote']);
+            Route::delete('/{id}', [NoteController::class, 'deleteNote'])->whereNumber('id');
             Route::get('/etudiant/{etudiantId}', [NoteController::class, 'getDetailedNotesByEtudiant']);
             Route::get('/etudiant/{etudiantId}/annee/{anneeAcademique}', [NoteController::class, 'getDetailedNotesByEtudiant']);
             Route::get('/moyenne/{etudiantParcoursId}', [NoteController::class, 'calculateMoyenne']);
+            Route::get('/releve/{etudiantParcoursId}', [NoteController::class, 'releve']);
         });
 
         // Comptes utilisateurs (routes fixes avant {id})

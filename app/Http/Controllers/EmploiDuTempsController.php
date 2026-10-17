@@ -6,8 +6,27 @@ use App\Models\Edt;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
+/**
+ * Emplois du temps (images) par semestre.
+ *
+ * Les fichiers sont stockés sur le disque « public » (storage/app/public/edt) et servis par
+ * le lien public/storage : la commande `php artisan storage:link` est indispensable
+ * sur chaque installation (sans elle, les images répondent 404).
+ * La base ne garde que le chemin public : /storage/edt/<fichier>.
+ */
 class EmploiDuTempsController extends Controller
 {
+    /** Nombre maximal d'images par semestre (au-delà, supprimer ou remplacer une image existante) */
+    public const MAX_PAR_SEMESTRE = 5;
+
+    private const REGLES_IMAGE = 'required|image|mimes:jpeg,png,jpg,webp|max:5120';
+    private const MESSAGES = [
+        'image.required' => 'Veuillez choisir une image.',
+        'image.image'    => 'Le fichier doit être une image (JPG, PNG ou WEBP).',
+        'image.mimes'    => 'Formats acceptés : JPG, PNG ou WEBP.',
+        'image.max'      => "L'image ne doit pas dépasser 5 Mo.",
+    ];
+
     public function index()
     {
         return Edt::orderBy('id', 'asc')->get();
@@ -15,35 +34,16 @@ class EmploiDuTempsController extends Controller
 
     public function updateImage(Request $request, $id)
     {
-        $request->validate([
-            'image' => 'required|image|mimes:jpeg,png,jpg,webp|max:5120',
-        ], [
-            'image.required' => 'Veuillez choisir une image.',
-            'image.max'      => "L'image ne doit pas dépasser 5 Mo.",
-        ]);
+        $request->validate(['image' => self::REGLES_IMAGE], self::MESSAGES);
 
         $emploi = Edt::findOrFail($id);
+        $ancienne = $emploi->image_url;
 
-        if ($request->hasFile('image')) {
-            // Supprimer l'ancienne image si elle existe
-            if ($emploi->image_url) {
-                $oldPath = str_replace('/storage/', 'public/', $emploi->image_url);
-                if (Storage::exists($oldPath)) {
-                    Storage::delete($oldPath);
-                }
-            }
-
-            // Stocker la nouvelle image
-            $image = $request->file('image');
-            $storedPath = $image->store('edt', 'public'); // stocké dans storage/app/public/edt
-            $relativePath = '/storage/' . $storedPath;     // renvoie "/storage/edt/nom_fichier.jpg"
-
-            // Enregistrement
-            $emploi->image_url = $relativePath;
-        }
-
+        $emploi->image_url = $this->enregistrer($request);
         $emploi->updated_by = $request->user()->email;
         $emploi->save();
+
+        $this->supprimerFichier($ancienne);
 
         return response()->json(['image_url' => $emploi->image_url], 200);
     }
@@ -51,20 +51,20 @@ class EmploiDuTempsController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'image' => 'required|image|mimes:jpeg,png,jpg,webp|max:5120',
+            'image'    => self::REGLES_IMAGE,
             'semestre' => 'required|integer|in:1,2',
-        ], [
-            'image.required' => 'Veuillez choisir une image.',
-            'image.max'      => "L'image ne doit pas dépasser 5 Mo.",
-        ]);
+        ], self::MESSAGES);
 
-        $image = $request->file('image');
-        $storedPath = $image->store('edt', 'public');
-        $relativePath = '/storage/' . $storedPath;  // "/storage/edt/..."
+        if (Edt::where('semestre', $request->semestre)->count() >= self::MAX_PAR_SEMESTRE) {
+            return response()->json([
+                'message' => 'Ce semestre a déjà ' . self::MAX_PAR_SEMESTRE . " images d'emploi du temps. "
+                    . "Supprimez ou remplacez une image existante.",
+            ], 422);
+        }
 
         $emploi = Edt::create([
-            'image_url' => $relativePath,
-            'semestre' => $request->semestre,
+            'image_url'  => $this->enregistrer($request),
+            'semestre'   => $request->semestre,
             'updated_by' => $request->user()->email,
         ]);
 
@@ -74,18 +74,23 @@ class EmploiDuTempsController extends Controller
     public function destroy($id)
     {
         $emploi = Edt::findOrFail($id);
-
-        if ($emploi->image_url) {
-            $imagePath = str_replace('/storage/', 'public/', $emploi->image_url);
-            if (Storage::exists($imagePath)) {
-                Storage::delete($imagePath);
-            }
-        }
-
+        $this->supprimerFichier($emploi->image_url);
         $emploi->delete();
+
         return response()->json(['message' => 'Image supprimée']);
     }
+
+    /** Stocke l'image dans storage/app/public/edt et renvoie son chemin public « /storage/edt/… » */
+    private function enregistrer(Request $request): string
+    {
+        return '/storage/' . $request->file('image')->store('edt', 'public');
+    }
+
+    private function supprimerFichier(?string $cheminPublic): void
+    {
+        if (!$cheminPublic || !str_starts_with($cheminPublic, '/storage/')) {
+            return;
+        }
+        Storage::disk('public')->delete(substr($cheminPublic, strlen('/storage/')));
+    }
 }
-
-
-//php artisan storage:link (commande à ne pas oublier après déploiement)

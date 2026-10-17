@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use App\Models\Note;
 use App\Models\Matiere;
 use App\Models\EtudiantParcours;
+use App\Services\ReleveService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 
@@ -174,6 +175,14 @@ class NoteController extends Controller
         } catch (\Exception $e) {
             return $this->serverError('Erreur lors de la récupération des notes détaillées', $e);
         }
+    }
+
+    /**
+     * Relevé de notes complet d'une inscription (bulletin) : mêmes calculs que l'espace étudiant
+     */
+    public function releve($etudiantParcoursId, ReleveService $releves)
+    {
+        return response()->json($releves->pour(EtudiantParcours::findOrFail($etudiantParcoursId)));
     }
 
     /**

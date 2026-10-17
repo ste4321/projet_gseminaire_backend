@@ -3,16 +3,32 @@
 namespace App\Http\Controllers;
 
 use App\Models\Annonce;
+use App\Models\EtudiantParcours;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
 class AnnonceController extends Controller
 {
     // 🔹 Liste toutes les annonces avec relations
-    public function index()
+    public function index(Request $request)
     {
-        $annonces = Annonce::with(['niveau', 'anneeAca'])->orderByDesc('created_at')->get();
-        return response()->json($annonces);
+        $query = Annonce::with(['niveau', 'anneeAca'])->orderByDesc('created_at');
+
+        // Étudiant : uniquement les annonces de son année et de son niveau (ou destinées à tous les niveaux)
+        if ($request->user()->role === 'etudiant') {
+            $parcours = EtudiantParcours::where('id_etudiant', $request->user()->etudiants?->id)
+                ->orderByDesc('id_annee_aca')
+                ->first();
+
+            if (!$parcours) {
+                return response()->json([]);
+            }
+
+            $query->where('id_annee_aca', $parcours->id_annee_aca)
+                ->where(fn ($q) => $q->whereNull('id_niveau')->orWhere('id_niveau', $parcours->id_niveau));
+        }
+
+        return response()->json($query->get());
     }
 
     // 🔹 Créer une annonce
@@ -81,7 +97,7 @@ class AnnonceController extends Controller
             'description'  => ['required', 'string', 'max:50000'],
             'fichier'      => ['nullable', 'file', 'mimes:zip,doc,docx,pdf,xlsx,jpg,jpeg,png', 'max:10240'],
             'id_annee_aca' => ['required', 'exists:annee_aca,id'],
-            'id_niveau'    => ['required', 'exists:niveaux,id'],
+            'id_niveau'    => ['nullable', 'exists:niveaux,id'], // vide = tous les niveaux
         ], [
             'description.required' => "Le contenu de l'annonce est obligatoire.",
             'fichier.mimes'        => 'Formats acceptés : PDF, Word, Excel, ZIP, JPG, PNG.',
