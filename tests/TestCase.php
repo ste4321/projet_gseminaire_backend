@@ -2,9 +2,49 @@
 
 namespace Tests;
 
+use App\Models\Admin;
+use App\Models\AnneeAca;
+use App\Models\Niveau;
+use App\Models\User;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
+use Illuminate\Support\Facades\Hash;
 
 abstract class TestCase extends BaseTestCase
 {
     use CreatesApplication;
+
+    protected function admin(): User
+    {
+        $user = User::create([
+            'email' => 'admin@test.local',
+            'password' => Hash::make('motdepasse-admin'),
+            'role' => 'admin',
+            'is_verified' => true,
+        ]);
+        Admin::create(['id_user_cession' => $user->id, 'nom_prenom' => 'Admin Test', 'email' => $user->email]);
+
+        return $user;
+    }
+
+    protected function user(string $role, bool $verified = true): User
+    {
+        static $n = 0;
+        $n++;
+
+        return User::create([
+            'email' => "{$role}{$n}@test.local",
+            'password' => Hash::make('motdepasse'),
+            'role' => $role,
+            'is_verified' => $verified,
+        ]);
+    }
+
+    /** Année académique + niveaux L1 à L3 */
+    protected function referentiel(): array
+    {
+        $annee = AnneeAca::create(['annee_aca' => '2025-2026']);
+        $niveaux = collect(['L1', 'L2', 'L3'])->mapWithKeys(fn ($n) => [$n => Niveau::create(['niveau' => $n])]);
+
+        return [$annee, $niveaux];
+    }
 }

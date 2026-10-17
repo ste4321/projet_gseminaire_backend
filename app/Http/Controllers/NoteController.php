@@ -23,31 +23,10 @@ class NoteController extends Controller
             
             return response()->json($notes, 200);
         } catch (\Exception $e) {
-            return response()->json([
-                'error' => 'Erreur lors de la récupération des notes',
-                'message' => $e->getMessage()
-            ], 500);
+            return $this->serverError('Erreur lors de la récupération des notes', $e);
         }
     }
 
-    /**
-     * Récupérer les matières par niveau
-     */
-    public function getMatieresByNiveau($niveau)
-    {
-        try {
-            $matieres = Matiere::whereHas('niveau', function($query) use ($niveau) {
-                $query->where('niveau', 'L' . $niveau);
-            })->get();
-            
-            return response()->json($matieres, 200);
-        } catch (\Exception $e) {
-            return response()->json([
-                'error' => 'Erreur lors de la récupération des matières',
-                'message' => $e->getMessage()
-            ], 500);
-        }
-    }
 
     /**
      * Mettre à jour les notes en lot
@@ -59,6 +38,7 @@ class NoteController extends Controller
             'notes' => 'required|array',
             'notes.*.id_matiere' => 'required|exists:matieres,id',
             'notes.*.note' => 'nullable|numeric|min:0|max:20',
+            'notes.*.statut' => 'nullable|string|max:50',
         ]);
 
         if ($validator->fails()) {
@@ -75,14 +55,16 @@ class NoteController extends Controller
             $notes = $request->notes;
 
             foreach ($notes as $noteData) {
-                if (!empty($noteData['note'])) {
+                // 0 est une note valide : seule une valeur vide supprime la note
+                $valeur = $noteData['note'] ?? null;
+                if ($valeur !== null && $valeur !== '') {
                     Note::updateOrCreate(
                         [
                             'id_etudiant_parcours' => $etudiantParcoursId,
                             'id_matiere' => $noteData['id_matiere']
                         ],
                         [
-                            'note' => $noteData['note'],
+                            'note' => $valeur,
                             'statut' => $noteData['statut'] ?? '',
                             'updated_at' => now()
                         ]
@@ -105,10 +87,7 @@ class NoteController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             
-            return response()->json([
-                'error' => 'Erreur lors de la mise à jour des notes',
-                'message' => $e->getMessage()
-            ], 500);
+            return $this->serverError('Erreur lors de la mise à jour des notes', $e);
         }
     }
 
@@ -151,10 +130,7 @@ class NoteController extends Controller
             ], 200);
 
         } catch (\Exception $e) {
-            return response()->json([
-                'error' => 'Erreur lors de la sauvegarde de la note',
-                'message' => $e->getMessage()
-            ], 500);
+            return $this->serverError('Erreur lors de la sauvegarde de la note', $e);
         }
     }
 
@@ -173,10 +149,7 @@ class NoteController extends Controller
             ], 200);
 
         } catch (\Exception $e) {
-            return response()->json([
-                'error' => 'Erreur lors de la suppression de la note',
-                'message' => $e->getMessage()
-            ], 500);
+            return $this->serverError('Erreur lors de la suppression de la note', $e);
         }
     }
 
@@ -192,17 +165,14 @@ class NoteController extends Controller
                     $q->where('id_annee_aca', $anneeAcademique);
                 }
             })
-            ->with(['matiere', 'etudiantParcours.etudiant', 'etudiantParcours.niveau', 'etudiantParcours.anneeAcademique']);
+            ->with(['matiere', 'etudiantParcours.etudiant', 'etudiantParcours.niveau', 'etudiantParcours.annee_academique']);
 
             $notes = $query->get();
 
             return response()->json($notes, 200);
 
         } catch (\Exception $e) {
-            return response()->json([
-                'error' => 'Erreur lors de la récupération des notes détaillées',
-                'message' => $e->getMessage()
-            ], 500);
+            return $this->serverError('Erreur lors de la récupération des notes détaillées', $e);
         }
     }
 
@@ -242,10 +212,7 @@ class NoteController extends Controller
             ], 200);
 
         } catch (\Exception $e) {
-            return response()->json([
-                'error' => 'Erreur lors du calcul de la moyenne',
-                'message' => $e->getMessage()
-            ], 500);
+            return $this->serverError('Erreur lors du calcul de la moyenne', $e);
         }
     }
 }

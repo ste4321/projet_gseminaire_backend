@@ -23,9 +23,10 @@ class AuthController extends Controller
             'password' => 'required|string|min:6|max:255'
         ]);
 
-        $email = $request->email;
+        $email = strtolower(trim($request->email));
         $ip = $request->ip();
-        $throttleKey = 'login_attempts:' . $ip;
+        // Limite par couple IP + email : un attaquant ne bloque pas tout un réseau partagé
+        $throttleKey = 'login_attempts:' . $ip . '|' . $email;
 
         // Protection contre les tentatives répétées
         if (RateLimiter::tooManyAttempts($throttleKey, 5)) {
@@ -43,7 +44,7 @@ class AuthController extends Controller
         }
 
         // Recherche de l'utilisateur
-        $user = User::where('email', $email)->first();
+        $user = User::whereRaw('LOWER(email) = ?', [$email])->first();
 
         if (!$user || !Hash::check($request->password, $user->password)) {
             RateLimiter::hit($throttleKey, 60 * 15); // 15 minutes
@@ -82,31 +83,6 @@ class AuthController extends Controller
         // Générer un token avec expiration
         $token = $user->createToken('auth_token', ['*'], Carbon::now()->addHours(24))->plainTextToken;
 
-        // Mettre à jour les infos de connexion
-        $user->update([
-            'last_login_at' => Carbon::now(),
-            'last_login_ip' => $ip
-        ]);
-
-        // Obtenir le nom_prenom selon le rôle
-        $nomPrenom = null;
-        switch ($user->role) {
-            case 'admin':
-                $admin = Admin::where('id_user_cession', $user->id)->first();
-                $nomPrenom = $admin?->nom_prenom;
-                break;
-
-            case 'prof':
-                $prof = Enseignant::where('id_user_cession', $user->id)->first();
-                $nomPrenom = $prof?->nom_prenom;
-                break;
-
-            case 'etudiant':
-                $etudiant = Etudiant::where('id_user_cession', $user->id)->first();
-                $nomPrenom = $etudiant?->nom_prenom;
-                break;
-        }
-
         Log::info('Connexion réussie', [
             'user_id' => $user->id,
             'email' => $user->email,
@@ -119,14 +95,7 @@ class AuthController extends Controller
             'access_token' => $token,
             'token_type' => 'Bearer',
             'expires_at' => Carbon::now()->addHours(24)->toISOString(),
-            'user' => [
-                'id' => $user->id,
-                'email' => $user->email,
-                'role' => $user->role,
-                'nom_prenom' => $nomPrenom,
-                'last_login_at' => $user->last_login_at?->toISOString(),
-                'is_verified' => $user->is_verified
-            ]
+            'user' => $this->userPayload($user),
         ]);
     }
 
@@ -148,13 +117,7 @@ class AuthController extends Controller
     public function me(Request $request)
     {
         return response()->json([
-            'user' => [
-                'id' => $request->user()->id,
-                'email' => $request->user()->email,
-                'role' => $request->user()->role,
-                'name' => $request->user()->name,
-                'last_login_at' => $request->user()->last_login_at?->toISOString(),
-            ]
+            'user' => $this->userPayload($request->user()),
         ]);
     }
 
@@ -173,5 +136,27 @@ class AuthController extends Controller
             'token_type' => 'Bearer',
             'expires_at' => Carbon::now()->addHours(24)->toISOString(),
         ]);
+    }
+
+    /**
+     * Données utilisateur renvoyées au frontend (jamais le mot de passe).
+     */
+    private function userPayload(User $user): array
+    {
+        $profil = match ($user->role) {
+            'admin'    => Admin::where('id_user_cession', $user->id)->first(),
+            'prof'     => Enseignant::where('id_user_cession', $user->id)->first(),
+            'etudiant' => Etudiant::where('id_user_cession', $user->id)->first(),
+            default    => null,
+        };
+
+        return [
+            'id'          => $user->id,
+            'email'       => $user->email,
+            'role'        => $user->role,
+            'nom_prenom'  => $profil?->nom_prenom,
+            'profil_id'   => $profil?->id,
+            'is_verified' => (bool) $user->is_verified,
+        ];
     }
 }

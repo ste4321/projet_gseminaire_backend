@@ -2,189 +2,153 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use App\Models\Etudiant;
 use App\Models\AnneeAca;
-use App\Models\Niveau;
+use App\Models\Etudiant;
 use App\Models\EtudiantParcours;
-use App\Models\Password;
-use App\Models\User;
-use Illuminate\Support\Str;
-use Illuminate\Support\Facades\Log;
+use App\Models\Niveau;
+use App\Services\AccountService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use PhpOffice\PhpSpreadsheet\IOFactory;
-use Illuminate\Support\Facades\Hash;
 
+/**
+ * Import Excel des étudiants.
+ * Nom de fichier attendu : Etudiant_<NIVEAU>_<ANNEE>.xlsx (ex : Etudiant_L1_2025-2026.xlsx)
+ * Colonnes : A nom et prénom | B matricule | C diocèse | D email | E téléphone (ligne 1 = en-têtes)
+ */
 class EtudiantImportController extends Controller
 {
-    public function import(Request $request)
+    public function __construct(private AccountService $accounts)
     {
-        ini_set('max_execution_time', 300);
-        ini_set('memory_limit', '512M');
-
-        try {
-            $file = $request->file('file');
-            $filename = $file->getClientOriginalName();
-
-            preg_match('/Etudiant_(L[1-3])_([0-9]{4}-[0-9]{4})/', $filename, $matches);
-            if (count($matches) !== 3) {
-                return response()->json([
-                    'message' => 'Nom de fichier invalide. Format attendu : Etudiant_LX_YYYY-YYYY.xlsx'
-                ], 400);
-            }
-
-            $niveauCode = $matches[1];
-            $anneeLabel = $matches[2];
-
-            $spreadsheet = IOFactory::load($file->getPathname());
-            $sheet = $spreadsheet->getActiveSheet();
-            $rows = $sheet->toArray(null, true, true, true);
-
-            $annee = AnneeAca::firstOrCreate(['annee_aca' => $anneeLabel]);
-            $niveau = Niveau::where('niveau', $niveauCode)->firstOrFail();
-
-            $totalRows = count($rows) - 1;
-            $processedRows = 0;
-            $errorRows = [];
-
-            DB::beginTransaction();
-
-            $batchSize = 50;
-            $chunks = array_chunk(array_slice($rows, 1), $batchSize);
-
-            foreach ($chunks as $chunkIndex => $chunk) {
-                foreach ($chunk as $index => $row) {
-                    $globalIndex = ($chunkIndex * $batchSize) + $index + 1;
-
-                    $nomPrenom = trim($row['A'] ?? '');
-                    $matricule = trim($row['B'] ?? '');
-                    $diocese = trim($row['C'] ?? '');
-                    $email = trim($row['D'] ?? '');
-                    $telephone = trim($row['E'] ?? '');
-
-                    $matricule = preg_replace('/[\x00-\x1F\x7F\xA0]/u', '', $matricule);
-
-                    if (empty($matricule) || empty($nomPrenom)) {
-                        $errorRows[] = "Ligne " . ($globalIndex + 1) . " : matricule ou nom manquant";
-                        continue;
-                    }
-
-                    $existingEtudiant = Etudiant::where('matricule', $matricule)->first();
-                    $etudiantId = null;
-
-                    if ($existingEtudiant) {
-                        $existingEtudiant->update([
-                            'nom_prenom' => $nomPrenom,
-                            'email' => $email,
-                            'telephone' => $telephone,
-                            'diocese' => $diocese
-                        ]);
-                        $etudiantId = $existingEtudiant->id;
-
-                        // Vérifier s'il a un user_cession lié, sinon créer
-                        if (!$existingEtudiant->id_user_cession) {
-                            $password = Str::random(6);
-                            $hashedPassword = Hash::make($password);
-                            $user = User::create([
-                                'email' => $email,
-                                'password' => bcrypt($password),
-                                'is_verified' => false,
-                                'role' => 'etudiant'
-                            ]);
-
-                            Password::create([
-                                'id_user_cession' => $user->id,
-                                'password' => $password,
-                                'psw_scrypt' => $hashedPassword
-                            ]);
-
-                            $existingEtudiant->update([
-                                'id_user_cession' => $user->id
-                            ]);
-                        }
-
-                    } else {
-                        // Créer user_cession
-                        $password = Str::random(6);
-                        $user = User::create([
-                            'email' => $email,
-                            'password' => bcrypt($password),
-                            'is_verified' => false,
-                            'role' => 'etudiant'
-                        ]);
-
-                        Password::create([
-                            'id_user_cession' => $user->id,
-                            'password' => $password,
-                            'psw_scrypt' => $password
-                        ]);
-
-                        // Créer l'étudiant
-                        $etudiant = Etudiant::create([
-                            'matricule' => $matricule,
-                            'nom_prenom' => $nomPrenom,
-                            'email' => $email,
-                            'telephone' => $telephone,
-                            'diocese' => $diocese,
-                            'id_user_cession' => $user->id
-                        ]);
-
-                        $etudiantId = $etudiant->id;
-                    }
-
-                    // Vérifier si le parcours existe déjà
-                    $existingParcours = EtudiantParcours::where([
-                        'id_etudiant' => $etudiantId,
-                        'id_annee_aca' => $annee->id,
-                        'id_niveau' => $niveau->id,
-                    ])->first();
-
-                    if (!$existingParcours) {
-                        EtudiantParcours::create([
-                            'id_etudiant' => $etudiantId,
-                            'id_annee_aca' => $annee->id,
-                            'id_niveau' => $niveau->id,
-                            'statut' => 'inscrit',
-                            'date_inscription' => now(),
-                            'matricule' => $matricule,
-                        ]);
-                    }
-
-                    $processedRows++;
-                }
-
-                Log::info("Batch " . ($chunkIndex + 1) . " traité : {$processedRows}/{$totalRows} étudiants");
-            }
-
-            DB::commit();
-
-            $response = [
-                'message' => 'Importation réussie.',
-                'total_rows' => $totalRows,
-                'processed_rows' => $processedRows,
-                'success_rate' => round(($processedRows / $totalRows) * 100, 2) . '%'
-            ];
-
-            if (!empty($errorRows)) {
-                $response['errors'] = $errorRows;
-                $response['error_count'] = count($errorRows);
-            }
-
-            return response()->json($response);
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error("Erreur lors de l'import : " . $e->getMessage(), [
-                'trace' => $e->getTraceAsString()
-            ]);
-
-            return response()->json([
-                'message' => 'Erreur lors de l\'importation : ' . $e->getMessage(),
-                'exception' => get_class($e),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-            ], 500);
-        }
     }
 
+    public function import(Request $request)
+    {
+        $request->validate([
+            'file' => ['required', 'file', 'mimes:xlsx,xls', 'max:10240'],
+        ], [
+            'file.required' => 'Veuillez choisir un fichier.',
+            'file.mimes'    => 'Le fichier doit être au format Excel (.xlsx ou .xls).',
+            'file.max'      => 'Le fichier ne doit pas dépasser 10 Mo.',
+        ]);
+
+        ini_set('max_execution_time', 300);
+
+        $file = $request->file('file');
+
+        if (!preg_match('/Etudiant_([A-Za-z][0-9])_([0-9]{4}-[0-9]{4})/', $file->getClientOriginalName(), $matches)) {
+            return response()->json([
+                'message' => 'Nom de fichier invalide. Format attendu : Etudiant_L1_2025-2026.xlsx',
+            ], 422);
+        }
+
+        $niveau = Niveau::where('niveau', strtoupper($matches[1]))->first();
+        if (!$niveau) {
+            return response()->json(['message' => "Le niveau {$matches[1]} n'existe pas. Créez-le d'abord dans « Niveaux »."], 422);
+        }
+        $annee = AnneeAca::firstOrCreate(['annee_aca' => $matches[2]]);
+
+        try {
+            $rows = IOFactory::load($file->getPathname())->getActiveSheet()->toArray(null, true, true, true);
+        } catch (\Throwable $e) {
+            return response()->json(['message' => 'Impossible de lire le fichier Excel.'], 422);
+        }
+
+        $rows = array_slice($rows, 1); // en-têtes
+        $totalRows = 0;
+        $processedRows = 0;
+        $createdAccounts = 0;
+        $errors = [];
+
+        foreach ($rows as $index => $row) {
+            $ligne = $index + 2; // numéro de ligne tel qu'affiché dans Excel
+
+            $nomPrenom = trim((string) ($row['A'] ?? ''));
+            $matricule = preg_replace('/[\x00-\x1F\x7F\xA0]/u', '', trim((string) ($row['B'] ?? '')));
+            $diocese   = trim((string) ($row['C'] ?? '')) ?: null;
+            $email     = strtolower(trim((string) ($row['D'] ?? ''))) ?: null;
+            $telephone = trim((string) ($row['E'] ?? '')) ?: null;
+
+            if ($nomPrenom === '' && $matricule === '') {
+                continue; // ligne vide
+            }
+            $totalRows++;
+
+            if ($nomPrenom === '' || $matricule === '') {
+                $errors[] = "Ligne {$ligne} : matricule ou nom manquant";
+                continue;
+            }
+            if ($email && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $errors[] = "Ligne {$ligne} : email invalide ({$email}), importé sans email";
+                $email = null;
+            }
+
+            try {
+                // Une transaction par ligne : une ligne en erreur n'annule pas tout l'import
+                DB::transaction(function () use ($matricule, $nomPrenom, $diocese, $email, $telephone, $annee, $niveau, &$createdAccounts) {
+                    $etudiant = Etudiant::where('matricule', $matricule)->first();
+
+                    // Email déjà pris par un autre étudiant : on garde l'étudiant, sans cet email
+                    if ($email && Etudiant::where('email', $email)->where('matricule', '!=', $matricule)->exists()) {
+                        $email = null;
+                    }
+
+                    if ($etudiant) {
+                        $etudiant->update(array_filter([
+                            'nom_prenom' => $nomPrenom,
+                            'diocese'    => $diocese,
+                            'email'      => $email,
+                            'telephone'  => $telephone,
+                        ], fn ($v) => $v !== null));
+                    } else {
+                        $etudiant = Etudiant::create([
+                            'matricule'  => $matricule,
+                            'nom_prenom' => $nomPrenom,
+                            'diocese'    => $diocese,
+                            'email'      => $email,
+                            'telephone'  => $telephone,
+                        ]);
+                    }
+
+                    if (!$etudiant->id_user_cession) {
+                        [$user] = $this->accounts->create('etudiant', $email, $matricule);
+                        $etudiant->update(['id_user_cession' => $user->id]);
+                        $createdAccounts++;
+                    }
+
+                    EtudiantParcours::firstOrCreate(
+                        [
+                            'id_etudiant'  => $etudiant->id,
+                            'id_annee_aca' => $annee->id,
+                        ],
+                        [
+                            'id_niveau'        => $niveau->id,
+                            'statut'           => 'inscrit',
+                            'date_inscription' => now(),
+                            'matricule'        => $matricule,
+                        ]
+                    );
+                });
+                $processedRows++;
+            } catch (\Throwable $e) {
+                Log::warning("Import étudiants, ligne {$ligne}", ['matricule' => $matricule, 'error' => $e->getMessage()]);
+                $errors[] = "Ligne {$ligne} : impossible d'importer le matricule {$matricule}";
+            }
+        }
+
+        if ($totalRows === 0) {
+            return response()->json(['message' => 'Le fichier ne contient aucun étudiant.'], 422);
+        }
+
+        return response()->json([
+            'message'        => 'Importation terminée.',
+            'total_rows'     => $totalRows,
+            'processed_rows' => $processedRows,
+            'created_accounts' => $createdAccounts,
+            'success_rate'   => round(($processedRows / $totalRows) * 100, 2) . '%',
+            'errors'         => $errors,
+            'error_count'    => count($errors),
+        ]);
+    }
 }
