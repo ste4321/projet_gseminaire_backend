@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ConfirmationController;
+use App\Http\Controllers\ConsultationController;
 use App\Http\Controllers\ContactController;
 use App\Http\Controllers\EmploiDuTempsController;
 use App\Http\Controllers\EnseignantController;
@@ -42,9 +43,11 @@ Route::post('/postContact', [ContactController::class, 'store'])->middleware('th
 Route::get('/infos', [InfoController::class, 'index']);
 
 // ─── 2. Utilisateur connecté ──────────────────────────────────────────────
-Route::middleware('auth:sanctum')->group(function () {
+Route::middleware(['auth:sanctum', 'consultation.lecture'])->group(function () {
     // Session (accessible même si le compte vient d'être désactivé, pour pouvoir se déconnecter)
     Route::post('/logout', [AuthController::class, 'logout']);
+    // Fin de la consultation de l'espace d'une autre personne (voir ConsultationController)
+    Route::post('/consultation/fin', [ConsultationController::class, 'fin']);
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/refresh', [AuthController::class, 'refresh']);
     // Accessible avec un mot de passe provisoire (c'est justement pour le remplacer)
@@ -135,5 +138,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::patch('/user-cessions/bulk-toggle', [UserCessionController::class, 'bulkToggle']);
         Route::patch('/user-cessions/{id}/toggle', [UserCessionController::class, 'toggle']);
         Route::post('/user-cessions/{id}/reset-password', [PasswordController::class, 'reset']);
+
+        // Ouvrir l'espace d'un étudiant ou d'un enseignant, en lecture seule
+        Route::post('/consultation/{userId}', [ConsultationController::class, 'demarrer'])
+            ->whereNumber('userId')->middleware('throttle:20,1');
     });
 });

@@ -67,4 +67,27 @@ class User extends Authenticatable
     // protected $casts = [
     //     'email_verified_at' => 'datetime',
     // ];
+
+    /**
+     * Données de session renvoyées au frontend (connexion, /me, consultation) — jamais le mot de passe.
+     */
+    public function payloadSession(): array
+    {
+        $profil = match ($this->role) {
+            'admin'    => Admin::where('id_user_cession', $this->id)->first(),
+            'prof'     => Enseignant::where('id_user_cession', $this->id)->first(),
+            'etudiant' => Etudiant::where('id_user_cession', $this->id)->first(),
+            default    => null,
+        };
+
+        return [
+            'id'          => $this->id,
+            'email'       => $this->email,
+            'role'        => $this->role,
+            'nom_prenom'  => $profil?->nom_prenom,
+            'profil_id'   => $profil?->id,
+            'is_verified' => (bool) $this->is_verified,
+            'must_change_password' => (bool) $this->must_change_password,
+        ];
+    }
 }
