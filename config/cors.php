@@ -31,7 +31,8 @@ return [
 
     'exposed_headers' => [],
 
-    'max_age' => 0,
+    // Le navigateur garde la réponse preflight (OPTIONS) en cache 2 h au lieu de la redemander à chaque requête
+    'max_age' => 7200,
 
     'supports_credentials' => false,
 
