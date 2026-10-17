@@ -19,7 +19,6 @@ use App\Http\Controllers\EtudiantImportController;
 use App\Http\Controllers\NoteController;
 use App\Http\Controllers\NoteImportController;
 use App\Http\Controllers\PasswordController;
-use App\Http\Controllers\ProfilController;
 use App\Http\Controllers\PublicationNoteController;
 use App\Http\Controllers\EspaceEtudiantController;
 use App\Http\Controllers\UserCessionController;
@@ -81,8 +80,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/enseignants', [EnseignantController::class, 'store']);
         Route::put('/enseignants/{id}', [EnseignantController::class, 'update']);
         Route::delete('/enseignants/{id}', [EnseignantController::class, 'destroy']);
-        Route::get('/enseignants/{id}/profil', [ProfilController::class, 'enseignant'])->whereNumber('id');
-        Route::get('/etudiants/{id}/profil', [ProfilController::class, 'etudiant'])->whereNumber('id');
         Route::get('/enseignants/{id}/cession', [EnseignantController::class, 'showCession']);
         Route::post('/enseignants/{id}/cession', [EnseignantController::class, 'assignCession']);
 
