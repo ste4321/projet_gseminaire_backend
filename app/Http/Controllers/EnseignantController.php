@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 
 class EnseignantController extends Controller
 {
@@ -118,7 +119,7 @@ class EnseignantController extends Controller
 
         $validated = $request->validate([
             'email'    => ['required', 'email', 'max:255', Rule::unique('user_cession', 'email')],
-            'password' => ['required', 'string', 'min:8'],
+            'password' => ['required', 'string', Password::defaults()],
         ]);
 
         $user = User::create([
@@ -126,6 +127,7 @@ class EnseignantController extends Controller
             'password'    => Hash::make($validated['password']),
             'role'        => 'prof',
             'is_verified' => true,
+            'must_change_password' => true, // mot de passe choisi par l'admin : provisoire
         ]);
 
         $enseignant->update(['id_user_cession' => $user->id]);

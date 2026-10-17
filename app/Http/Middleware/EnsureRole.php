@@ -24,6 +24,14 @@ class EnsureRole
             return response()->json(['message' => 'Compte désactivé.'], 403);
         }
 
+        // Mot de passe provisoire : seul le changement de mot de passe est autorisé
+        if ($user->must_change_password) {
+            return response()->json([
+                'message'    => 'Vous devez changer votre mot de passe provisoire avant de continuer.',
+                'error_type' => 'password_change_required',
+            ], 403);
+        }
+
         if (!in_array($user->role, $roles, true)) {
             return response()->json(['message' => 'Accès refusé.'], 403);
         }

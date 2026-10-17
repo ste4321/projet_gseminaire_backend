@@ -17,6 +17,7 @@ use App\Http\Controllers\EtudiantParcoursController;
 use App\Http\Controllers\EtudiantImportController;
 use App\Http\Controllers\NoteController;
 use App\Http\Controllers\NoteImportController;
+use App\Http\Controllers\PasswordController;
 use App\Http\Controllers\UserCessionController;
 
 /*
@@ -43,6 +44,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/logout', [AuthController::class, 'logout']);
     Route::get('/me', [AuthController::class, 'me']);
     Route::post('/refresh', [AuthController::class, 'refresh']);
+    // Accessible avec un mot de passe provisoire (c'est justement pour le remplacer)
+    Route::post('/password/change', [PasswordController::class, 'change'])->middleware('throttle:10,1');
 
     // Lecture commune aux trois rôles
     Route::middleware('role:admin,prof,etudiant')->group(function () {
@@ -116,5 +119,6 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/user-cessions/stats', [UserCessionController::class, 'stats']);
         Route::patch('/user-cessions/bulk-toggle', [UserCessionController::class, 'bulkToggle']);
         Route::patch('/user-cessions/{id}/toggle', [UserCessionController::class, 'toggle']);
+        Route::post('/user-cessions/{id}/reset-password', [PasswordController::class, 'reset']);
     });
 });
