@@ -6,6 +6,7 @@ use App\Models\EtudiantParcours;
 use App\Models\Matiere;
 use App\Models\Note;
 use App\Models\PublicationNote;
+use App\Services\ConfirmationService;
 use Illuminate\Http\Request;
 
 /**
@@ -57,9 +58,10 @@ class PublicationNoteController extends Controller
     }
 
     /** POST /api/notes/publications : publie un semestre (sans effet s'il l'est déjà) */
-    public function store(Request $request)
+    public function store(Request $request, ConfirmationService $confirmations)
     {
         $cible = $this->cible($request);
+        $confirmations->exiger($request->user(), 'publier_notes', $request->input('code_confirmation'));
 
         $publication = PublicationNote::firstOrCreate($cible, ['publie_par' => $request->user()->id]);
 

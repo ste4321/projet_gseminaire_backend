@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\ConfirmationController;
 use App\Http\Controllers\ContactController;
 use App\Http\Controllers\EmploiDuTempsController;
 use App\Http\Controllers\EnseignantController;
@@ -93,6 +94,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/annonces/{id}', [AnnonceController::class, 'destroy']);
 
         // Infos (site vitrine)
+        // Code à recopier avant une publication (notes, actualité)
+        Route::post('/confirmations', [ConfirmationController::class, 'store'])->middleware('throttle:20,1');
         Route::post('/infos', [InfoController::class, 'store']);
         Route::put('/infos/{id}', [InfoController::class, 'update']);
         Route::delete('/infos/{id}', [InfoController::class, 'destroy']);
