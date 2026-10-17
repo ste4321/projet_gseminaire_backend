@@ -47,7 +47,8 @@ class EspaceEtudiantController extends Controller
             return response()->json(['message' => 'Aucune inscription trouvée pour votre compte.'], 404);
         }
 
-        return response()->json($this->releves->pour($parcours));
+        // Seuls les semestres publiés par l'administration sont dévoilés
+        return response()->json($this->releves->pour($parcours, publiesSeulement: true));
     }
 
     private function etudiant(Request $request)

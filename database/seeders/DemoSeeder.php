@@ -12,6 +12,7 @@ use App\Models\EtudiantParcours;
 use App\Models\Matiere;
 use App\Models\Niveau;
 use App\Models\Note;
+use App\Models\PublicationNote;
 use App\Models\Semestre;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -96,6 +97,9 @@ class DemoSeeder extends Seeder
                 }
             }
         }
+
+        // Semestre 1 publié pour la L1 (le semestre 2 reste à publier depuis la page Notes)
+        PublicationNote::firstOrCreate(['id_annee_aca' => $annee->id, 'id_niveau' => $niveaux['L1']->id, 'id_semestre' => $s1->id]);
 
         // Quelques comptes en attente d'activation, pour voir les indicateurs
         foreach ([2, 3] as $i) {

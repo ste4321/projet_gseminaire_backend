@@ -8,6 +8,7 @@ use App\Models\Etudiant;
 use App\Models\EtudiantParcours;
 use App\Models\Matiere;
 use App\Models\Note;
+use App\Models\PublicationNote;
 use App\Models\Semestre;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -22,13 +23,15 @@ class EspaceEtudiantTest extends TestCase
     private EtudiantParcours $parcoursAutre;
     private $annee;
     private $niveaux;
+    private Semestre $s1;
+    private Semestre $s2;
 
     protected function setUp(): void
     {
         parent::setUp();
         [$this->annee, $this->niveaux] = $this->referentiel();
-        $s1 = Semestre::create(['semestre' => 'Semestre 1', 'code_semestre' => 'S1']);
-        $s2 = Semestre::create(['semestre' => 'Semestre 2', 'code_semestre' => 'S2']);
+        $s1 = $this->s1 = Semestre::create(['semestre' => 'Semestre 1', 'code_semestre' => 'S1']);
+        $s2 = $this->s2 = Semestre::create(['semestre' => 'Semestre 2', 'code_semestre' => 'S2']);
 
         $latin = Matiere::create(['matiere' => 'Latin', 'heures' => 20, 'id_niveau' => $this->niveaux['L1']->id, 'code_matiere' => 'LAT', 'coefficient' => '1', 'id_semestre' => $s1->id]);
         $theo = Matiere::create(['matiere' => 'Théologie', 'heures' => 40, 'id_niveau' => $this->niveaux['L1']->id, 'code_matiere' => 'THEO', 'coefficient' => '3', 'id_semestre' => $s1->id]);
@@ -54,8 +57,15 @@ class EspaceEtudiantTest extends TestCase
         ]);
     }
 
+    private function publier(Semestre $semestre): void
+    {
+        PublicationNote::create(['id_annee_aca' => $this->annee->id, 'id_niveau' => $this->niveaux['L1']->id, 'id_semestre' => $semestre->id]);
+    }
+
     public function test_releve_avec_moyenne_ponderee_et_note_zero(): void
     {
+        $this->publier($this->s1);
+        $this->publier($this->s2);
         $this->actingAs($this->compte, 'sanctum');
 
         $releve = $this->getJson('/api/etudiant/releve')->assertOk()->json();
@@ -63,14 +73,16 @@ class EspaceEtudiantTest extends TestCase
         $this->assertSame('E001', $releve['etudiant']['matricule']);
         $this->assertSame('L1', $releve['niveau']);
         $this->assertCount(2, $releve['semestres']);
-        // Semestre 1 : (0×1 + 16×3) / (1+3) = 12 ; le 0 compte
+        // Semestre 1 : (0×1 + 16×3) / (1+3) = 12 ; le 0 compte ; toutes les notes saisies → Validé
         $this->assertEquals(12.0, $releve['semestres'][0]['moyenne']);
+        $this->assertSame('Validé', $releve['semestres'][0]['statut']);
         $this->assertEquals(0.0, $releve['semestres'][0]['matieres'][0]['note']);
         // Semestre 2 : aucune note
         $this->assertNull($releve['semestres'][1]['moyenne']);
         $this->assertNull($releve['semestres'][1]['matieres'][0]['note']);
-        // Général : 2 notes sur 3 matières, moyenne 12
+        // Général : 2 notes sur 3 matières, moyenne 12 ; pas de statut tant qu'il manque une note
         $this->assertEquals(12.0, $releve['general']['moyenne']);
+        $this->assertNull($releve['general']['statut']);
         $this->assertSame(3, $releve['general']['matieres_total']);
         $this->assertSame(2, $releve['general']['notes_saisies']);
     }
@@ -114,9 +126,73 @@ class EspaceEtudiantTest extends TestCase
     {
         $this->actingAs($this->admin(), 'sanctum');
 
+        // L'administration voit toutes les notes, publiées ou non
         $this->getJson('/api/notes/releve/' . $this->parcours->id)
             ->assertOk()
-            ->assertJsonPath('general.moyenne', 12);
+            ->assertJsonPath('general.moyenne', 12)
+            ->assertJsonPath('semestres.0.publie', false);
+    }
+
+    public function test_notes_invisibles_tant_que_le_semestre_n_est_pas_publie(): void
+    {
+        $this->actingAs($this->compte, 'sanctum');
+
+        $releve = $this->getJson('/api/etudiant/releve')->assertOk()->json();
+        $this->assertFalse($releve['semestres'][0]['publie']);
+        $this->assertNull($releve['semestres'][0]['matieres'][1]['note']); // le 16 ne quitte pas le serveur
+        $this->assertNull($releve['semestres'][0]['moyenne']);
+        $this->assertNull($releve['general']['moyenne']);
+
+        // Publication du semestre 1 seulement
+        $this->publier($this->s1);
+        $releve = $this->getJson('/api/etudiant/releve')->assertOk()->json();
+        $this->assertEquals(16.0, $releve['semestres'][0]['matieres'][1]['note']);
+        $this->assertEquals(12.0, $releve['general']['moyenne']);
+        $this->assertFalse($releve['semestres'][1]['publie']);
+        $this->assertSame(1, $releve['general']['semestres_publies']);
+    }
+
+    public function test_statut_rattrapage_sous_la_moyenne(): void
+    {
+        Note::where('id_etudiant_parcours', $this->parcours->id)->update(['note' => 6]);
+        Note::create(['id_etudiant_parcours' => $this->parcours->id, 'id_matiere' => Matiere::where('code_matiere', 'GREC')->value('id'), 'note' => 9]);
+        $this->publier($this->s1);
+        $this->publier($this->s2);
+        $this->actingAs($this->compte, 'sanctum');
+
+        $releve = $this->getJson('/api/etudiant/releve')->assertOk()->json();
+        $this->assertSame('Rattrapage', $releve['semestres'][0]['statut']);
+        $this->assertSame('Rattrapage', $releve['general']['statut']);
+    }
+
+    public function test_publier_et_retirer_un_semestre(): void
+    {
+        $this->actingAs($this->admin(), 'sanctum');
+        $cible = ['id_annee_aca' => $this->annee->id, 'id_niveau' => $this->niveaux['L1']->id, 'id_semestre' => $this->s1->id];
+
+        $this->postJson('/api/notes/publications', $cible)->assertCreated();
+        $this->postJson('/api/notes/publications', $cible)->assertOk(); // déjà publié : pas de doublon
+        $this->assertSame(1, PublicationNote::count());
+
+        $etat = $this->getJson("/api/notes/publications?annee={$this->annee->id}&niveau={$this->niveaux['L1']->id}")->assertOk()->json();
+        $this->assertCount(2, $etat);
+        $this->assertTrue($etat[0]['publie']);
+        $this->assertSame(2, $etat[0]['etudiants']);
+        $this->assertSame(4, $etat[0]['notes_attendues']);
+        $this->assertSame(3, $etat[0]['notes_saisies']);
+        $this->assertFalse($etat[1]['publie']);
+
+        $this->deleteJson('/api/notes/publications', $cible)->assertOk();
+        $this->assertSame(0, PublicationNote::count());
+    }
+
+    public function test_seul_l_admin_publie(): void
+    {
+        $this->actingAs($this->compte, 'sanctum');
+        $cible = ['id_annee_aca' => $this->annee->id, 'id_niveau' => $this->niveaux['L1']->id, 'id_semestre' => $this->s1->id];
+
+        $this->postJson('/api/notes/publications', $cible)->assertForbidden();
+        $this->assertSame(0, PublicationNote::count());
     }
 
     public function test_annonces_filtrees_sur_son_annee_et_son_niveau(): void
