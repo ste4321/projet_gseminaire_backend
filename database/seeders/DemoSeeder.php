@@ -7,6 +7,7 @@ use App\Models\AnneeAca;
 use App\Models\Annonce;
 use App\Models\Enseignant;
 use App\Models\Etudiant;
+use App\Models\Info;
 use App\Models\EtudiantParcours;
 use App\Models\Matiere;
 use App\Models\Niveau;
@@ -113,6 +114,19 @@ class DemoSeeder extends Seeder
                 'description' => $texte, 'expediteur' => 'Administration',
                 'id_annee_aca' => $annee->id, 'id_niveau' => $niveaux[$niveau]->id,
             ]);
+        }
+
+        // Actualités du site vitrine, à des dates variées
+        foreach ([
+            [0, 'Père Rodolphe', 'Fête de la Toussaint', "La messe solennelle de la Toussaint sera célébrée le 1er novembre à 9 h à la chapelle du séminaire.
+
+Les familles et amis du séminaire sont les bienvenus. Un repas fraternel suivra la célébration."],
+            [1, 'Administration', 'Ordinations diaconales', "Cinq séminaristes de troisième année seront ordonnés diacres en décembre. Gardons-les dans nos prières."],
+            [3, 'Père Recteur', 'Journée portes ouvertes', "Le séminaire ouvre ses portes aux jeunes qui s'interrogent sur leur vocation. Visite, témoignages et temps de prière au programme."],
+            [12, 'Administration', 'Rentrée académique 2025-2026', "La rentrée académique a eu lieu le 15 septembre en présence de Son Excellence l'Archevêque."],
+        ] as [$joursAvant, $auteur, $titre, $texte]) {
+            $info = Info::firstOrCreate(['titre' => $titre], ['auteur' => $auteur, 'description' => $texte]);
+            $info->forceFill(['created_at' => now()->subDays($joursAvant), 'updated_at' => now()->subDays($joursAvant)])->save();
         }
 
         $this->command?->info('Données de démonstration créées. Mot de passe : ' . self::MOT_DE_PASSE);
