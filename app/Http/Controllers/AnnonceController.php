@@ -18,14 +18,7 @@ class AnnonceController extends Controller
     // 🔹 Créer une annonce
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'titre' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'fichier' => 'nullable|file|mimes:zip,doc,docx,pdf',
-            'id_annee_aca' => 'required|exists:annee_aca,id',
-            'id_niveau' => 'required|exists:niveaux,id',
-            'expediteur' => 'required|string|max:255',
-        ]);
+        $validated = $this->validated($request);
 
         // Gestion du fichier joint
         if ($request->hasFile('fichier')) {
@@ -49,14 +42,7 @@ class AnnonceController extends Controller
     {
         $annonce = Annonce::findOrFail($id);
 
-        $validated = $request->validate([
-            'titre' => 'required|string|max:255',
-            'description' => 'nullable|string',
-            'fichier' => 'nullable|file|mimes:zip,doc,docx,pdf',
-            'id_annee_aca' => 'required|exists:annee_aca,id',
-            'id_niveau' => 'required|exists:niveaux,id',
-            'expediteur' => 'required|string|max:255',
-        ]);
+        $validated = $this->validated($request);
 
         if ($request->hasFile('fichier')) {
             // Optionnel : supprimer l'ancien fichier
@@ -85,6 +71,29 @@ class AnnonceController extends Controller
         }
 
         $annonce->delete();
-        return response()->json(['message' => 'Annonce supprimée avec succès.'], 204);
+        return response()->json(['message' => 'Annonce supprimée avec succès.']);
+    }
+
+    private function validated(Request $request): array
+    {
+        $validated = $request->validate([
+            'titre'        => ['required', 'string', 'max:255'],
+            'description'  => ['required', 'string', 'max:50000'],
+            'fichier'      => ['nullable', 'file', 'mimes:zip,doc,docx,pdf,xlsx,jpg,jpeg,png', 'max:10240'],
+            'id_annee_aca' => ['required', 'exists:annee_aca,id'],
+            'id_niveau'    => ['required', 'exists:niveaux,id'],
+        ], [
+            'description.required' => "Le contenu de l'annonce est obligatoire.",
+            'fichier.mimes'        => 'Formats acceptés : PDF, Word, Excel, ZIP, JPG, PNG.',
+            'fichier.max'          => 'Le fichier ne doit pas dépasser 10 Mo.',
+        ]);
+
+        // L'expéditeur est déterminé par le serveur (non falsifiable depuis le navigateur)
+        $user = $request->user();
+        $validated['expediteur'] = $user->role === 'admin'
+            ? 'Administration'
+            : ($user->enseignant?->nom_prenom ?? $user->email);
+
+        return $validated;
     }
 }

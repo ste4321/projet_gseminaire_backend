@@ -2,252 +2,168 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Etudiant;
-use Illuminate\Http\Request;
-use App\Models\EtudiantParcours;
-use Illuminate\Support\Facades\DB;
-use App\Models\Niveau;
 use App\Models\AnneeAca;
-use App\Models\Password;
+use App\Models\Etudiant;
+use App\Models\EtudiantParcours;
+use App\Models\Niveau;
 use App\Models\User;
-use Illuminate\Support\Str;
-use Illuminate\Support\Facades\Hash;
+use App\Services\AccountService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class EtudiantController extends Controller
 {
+    public function __construct(private AccountService $accounts)
+    {
+    }
+
     public function index()
     {
         return Etudiant::orderBy('id')->get();
     }
 
-    // public function store(Request $request)
-    // {
-    //     $validated = $request->validate([
-    //         'matricule'    => 'required|string|max:50',
-    //         'nom_prenom'   => 'required|string|max:255',
-    //         'diocese'      => 'nullable|string|max:255',
-    //         'email'        => 'nullable|email',
-    //         'telephone'    => 'nullable|string|max:30',
-    //         'niveau'       => 'required|string|in:L1,L2,L3,M1,M2',
-    //         'filiere'      => 'nullable|string|max:255',
-    //     ]);
-
-    //     // 🔍 Vérifier si un étudiant avec ce matricule existe déjà
-    //     if (Etudiant::where('matricule', $validated['matricule'])->exists()) {
-    //         return response()->json([
-    //             'message' => "Le matricule « {$validated['matricule']} » existe déjà dans la base de données.",
-    //         ], 409); // 409 Conflict
-    //     }
-
-    //     try {
-    //         DB::beginTransaction();
-
-    //         $etudiant = Etudiant::create([
-    //             'matricule'    => $validated['matricule'],
-    //             'nom_prenom'   => $validated['nom_prenom'],
-    //             'diocese'      => $validated['diocese'] ?? null,
-    //             'email'        => $validated['email'] ?? null,
-    //             'telephone'    => $validated['telephone'] ?? null,
-    //         ]);
-
-    //         $niveau = Niveau::where('niveau', $validated['niveau'])->firstOrFail();
-    //         $annee = AnneeAca::orderBy('id', 'desc')->firstOrFail();
-
-    //         EtudiantParcours::create([
-    //             'id_etudiant'       => $etudiant->id,
-    //             'id_niveau'         => $niveau->id,
-    //             'id_annee_aca'      => $annee->id,
-    //             'statut'            => 'inscrit',
-    //             'date_inscription'  => now(),
-    //             'matricule'         => $validated['matricule'],
-    //         ]);
-
-    //         DB::commit();
-
-    //         return response()->json([
-    //             'message' => 'Étudiant ajouté avec succès.',
-    //             'etudiant' => $etudiant,
-    //         ], 201);
-
-    //     } catch (\Exception $e) {
-    //         DB::rollBack();
-    //         return response()->json([
-    //             'message' => 'Erreur lors de la création de l\'étudiant.',
-    //             'exception' => get_class($e),
-    //             'error' => $e->getMessage(),
-    //         ], 500);
-    //     }
-    // }
-
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'matricule'    => 'required|string|max:50',
-            'nom_prenom'   => 'required|string|max:255',
-            'diocese'      => 'nullable|string|max:255',
-            'email'        => 'nullable|email',
-            'telephone'    => 'nullable|string|max:30',
-            'niveau'       => 'required|string|in:L1,L2,L3,M1,M2',
-            'filiere'      => 'nullable|string|max:255',
-        ]);
+        $validated = $request->validate($this->rules(), $this->messages());
 
-        if (Etudiant::where('matricule', $validated['matricule'])->exists()) {
-            return response()->json([
-                'message' => "Le matricule « {$validated['matricule']} » existe déjà dans la base de données.",
-            ], 409);
+        if ($validated['email'] ?? null) {
+            if ($this->accounts->emailTaken($validated['email'])) {
+                return response()->json([
+                    'message' => 'Cet email est déjà utilisé par un autre compte.',
+                    'errors'  => ['email' => ['Cet email est déjà utilisé par un autre compte.']],
+                ], 422);
+            }
         }
+
+        $annee = AnneeAca::orderByDesc('id')->first();
+        if (!$annee) {
+            return response()->json(['message' => "Aucune année académique n'est configurée."], 422);
+        }
+        $niveau = Niveau::where('niveau', $validated['niveau'])->firstOrFail();
 
         try {
-            DB::beginTransaction();
+            [$etudiant, $user, $motDePasse] = DB::transaction(function () use ($validated, $annee, $niveau) {
+                [$user, $motDePasse] = $this->accounts->create('etudiant', $validated['email'] ?? null, $validated['matricule']);
 
-            // 1. Générer mot de passe
-            $randomPassword = Str::random(6);
-            $hashedPassword = Hash::make($randomPassword);
+                $etudiant = Etudiant::create([
+                    'matricule'       => $validated['matricule'],
+                    'nom_prenom'      => $validated['nom_prenom'],
+                    'diocese'         => $validated['diocese'] ?? null,
+                    'email'           => $validated['email'] ?? null,
+                    'telephone'       => $validated['telephone'] ?? null,
+                    'id_user_cession' => $user->id,
+                ]);
 
-            // 2. Créer utilisateur user_cession
-            $user = User::create([
-                'email'       => $validated['email'] ?? "{$validated['matricule']}@fake.email",
-                'password'    => $hashedPassword,
-                'is_verified' => false,
-                'role'        => 'etudiant',
-            ]);
+                EtudiantParcours::create([
+                    'id_etudiant'      => $etudiant->id,
+                    'id_niveau'        => $niveau->id,
+                    'id_annee_aca'     => $annee->id,
+                    'statut'           => 'inscrit',
+                    'date_inscription' => now(),
+                    'matricule'        => $etudiant->matricule,
+                ]);
 
-            // 3. Créer mot de passe dans passwords
-            Password::create([
-                'id_user_cession' => $user->id,
-                'password'        => $randomPassword,
-                'psw_scrypt'      => $hashedPassword,
-            ]);
-
-            // 4. Créer étudiant
-            $etudiant = Etudiant::create([
-                'matricule'         => $validated['matricule'],
-                'nom_prenom'        => $validated['nom_prenom'],
-                'diocese'           => $validated['diocese'] ?? null,
-                'email'             => $validated['email'] ?? null,
-                'telephone'         => $validated['telephone'] ?? null,
-                'id_user_cession'   => $user->id,
-            ]);
-
-            // 5. Créer ligne dans etudiant_parcours
-            $niveau = Niveau::where('niveau', $validated['niveau'])->firstOrFail();
-            $annee = AnneeAca::orderBy('id', 'desc')->firstOrFail();
-
-            EtudiantParcours::create([
-                'id_etudiant'       => $etudiant->id,
-                'id_niveau'         => $niveau->id,
-                'id_annee_aca'      => $annee->id,
-                'statut'            => 'inscrit',
-                'date_inscription'  => now(),
-                'matricule'         => $validated['matricule'],
-            ]);
-
-            DB::commit();
-
-            return response()->json([
-                'message' => "Étudiant ajouté avec succès.",
-                'etudiant' => $etudiant,
-                'user' => $user,
-                'mot_de_passe' => $randomPassword // à afficher une seule fois si besoin
-            ], 201);
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'message' => 'Erreur lors de la création de l\'étudiant.',
-                'error' => $e->getMessage(),
-            ], 500);
+                return [$etudiant, $user, $motDePasse];
+            });
+        } catch (\Throwable $e) {
+            return $this->serverError("Erreur lors de la création de l'étudiant.", $e);
         }
+
+        return response()->json([
+            'message'      => 'Étudiant ajouté avec succès.',
+            'etudiant'     => $etudiant,
+            'user'         => $user,
+            'mot_de_passe' => $motDePasse, // affiché une seule fois à l'admin
+        ], 201);
     }
 
     public function show($id)
     {
-        return Etudiant::findOrFail($id);
+        return Etudiant::with(['parcours.niveau', 'parcours.annee_academique'])->findOrFail($id);
     }
 
     public function update(Request $request, $id)
     {
         $etudiant = Etudiant::findOrFail($id);
+        $validated = $request->validate($this->rules($etudiant), $this->messages());
 
-        $validated = $request->validate([
-            'matricule'    => "required|string|max:50|unique:etudiants,matricule,{$id}",
-            'nom_prenom'   => 'required|string|max:255',
-            'diocese'      => 'nullable|string|max:255',
-            'email'        => 'nullable|email',
-            'telephone'    => 'nullable|string|max:30',
-            'niveau'       => 'required|string|in:L1,L2,L3,M1,M2',
-        ]);
-
-        DB::beginTransaction();
+        if (($validated['email'] ?? null) && $this->accounts->emailTaken($validated['email'], $etudiant->id_user_cession)) {
+            return response()->json([
+                'message' => 'Cet email est déjà utilisé par un autre compte.',
+                'errors'  => ['email' => ['Cet email est déjà utilisé par un autre compte.']],
+            ], 422);
+        }
 
         try {
-            // ✅ Mise à jour des infos de base
-            $etudiant->update([
-                'matricule'   => $validated['matricule'],
-                'nom_prenom'  => $validated['nom_prenom'],
-                'diocese'     => $validated['diocese'] ?? null,
-                'email'       => $validated['email'] ?? null,
-                'telephone'   => $validated['telephone'] ?? null,
-            ]);
-
-            // ✅ Récupération du niveau et de l’année académique actuelle
-            $niveau = Niveau::where('niveau', $validated['niveau'])->firstOrFail();
-            $annee = AnneeAca::orderBy('id', 'desc')->firstOrFail(); // dernière année
-
-            // ✅ Mise à jour du niveau dans etudiant_parcours
-            $parcours = EtudiantParcours::where('id_etudiant', $etudiant->id)
-                        ->where('id_annee_aca', $annee->id)
-                        ->first();
-
-            if ($parcours) {
-                $parcours->update([
-                    'id_niveau' => $niveau->id,
+            DB::transaction(function () use ($etudiant, $validated) {
+                $etudiant->update([
+                    'matricule'  => $validated['matricule'],
+                    'nom_prenom' => $validated['nom_prenom'],
+                    'diocese'    => $validated['diocese'] ?? null,
+                    'email'      => $validated['email'] ?? null,
+                    'telephone'  => $validated['telephone'] ?? null,
                 ]);
-            }
 
-            DB::commit();
+                // L'email sert d'identifiant de connexion : on garde le compte synchronisé
+                if (($validated['email'] ?? null) && $etudiant->id_user_cession) {
+                    User::whereKey($etudiant->id_user_cession)->update(['email' => strtolower($validated['email'])]);
+                }
 
-            return response()->json([
-                'message' => 'Étudiant mis à jour avec succès.',
-                'etudiant' => $etudiant,
-            ]);
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json([
-                'message' => 'Erreur lors de la mise à jour de l\'étudiant.',
-                'error' => $e->getMessage(),
-            ], 500);
+                // Niveau de l'année académique en cours
+                $niveau = Niveau::where('niveau', $validated['niveau'])->firstOrFail();
+                $annee = AnneeAca::orderByDesc('id')->first();
+                if ($annee) {
+                    EtudiantParcours::where('id_etudiant', $etudiant->id)
+                        ->where('id_annee_aca', $annee->id)
+                        ->update(['id_niveau' => $niveau->id, 'matricule' => $etudiant->matricule]);
+                }
+            });
+        } catch (\Throwable $e) {
+            return $this->serverError("Erreur lors de la mise à jour de l'étudiant.", $e);
         }
+
+        return response()->json([
+            'message'  => 'Étudiant mis à jour avec succès.',
+            'etudiant' => $etudiant->fresh(),
+        ]);
     }
 
     public function destroy($id)
     {
         $etudiant = Etudiant::findOrFail($id);
-        $etudiant->delete();
+
+        try {
+            DB::transaction(function () use ($etudiant) {
+                $userId = $etudiant->id_user_cession;
+                $etudiant->delete(); // parcours et notes supprimés par cascade
+                $this->accounts->delete($userId); // plus de compte orphelin capable de se connecter
+            });
+        } catch (\Throwable $e) {
+            return $this->serverError("Erreur lors de la suppression de l'étudiant.", $e);
+        }
 
         return response()->json(['message' => 'Étudiant supprimé avec succès.']);
     }
 
-    public function parcoursParAnneeEtNiveau($id_annee, $id_niveau)
+    private function rules(?Etudiant $etudiant = null): array
     {
-        $parcours = EtudiantParcours::with('etudiant')
-            ->where('id_annee_aca', $id_annee)
-            ->where('id_niveau', $id_niveau)
-            ->get();
+        return [
+            'matricule'  => ['required', 'string', 'max:50', Rule::unique('etudiants', 'matricule')->ignore($etudiant?->id)],
+            'nom_prenom' => ['required', 'string', 'max:255'],
+            'diocese'    => ['nullable', 'string', 'max:255'],
+            'email'      => ['nullable', 'email', 'max:255', Rule::unique('etudiants', 'email')->ignore($etudiant?->id)],
+            'telephone'  => ['nullable', 'string', 'max:30'],
+            'niveau'     => ['required', 'string', Rule::exists('niveaux', 'niveau')],
+        ];
+    }
 
-        // Transformer les données pour retourner les infos utiles
-        $result = $parcours->map(function ($p) {
-            return [
-                'id' => $p->etudiant->id,
-                'nom_prenom' => $p->etudiant->nom_prenom,
-                'matricule' => $p->etudiant->matricule,
-                'diocese' => $p->etudiant->diocese,
-                'email' => $p->etudiant->email,
-                'telephone' => $p->etudiant->telephone,
-            ];
-        });
-
-        return response()->json($result);
+    private function messages(): array
+    {
+        return [
+            'matricule.unique' => 'Ce matricule existe déjà.',
+            'email.unique'     => 'Cet email est déjà utilisé par un autre étudiant.',
+            'niveau.exists'    => "Ce niveau n'existe pas.",
+        ];
     }
 }

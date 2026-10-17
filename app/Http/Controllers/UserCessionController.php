@@ -35,33 +35,20 @@ class UserCessionController extends Controller
                 $query->where('user_cession.role', $role);
             }
 
-            $users = $query->orderBy('user_cession.created_at', 'desc')->get();
+            // Profils chargés en 3 requêtes groupées (au lieu d'une requête par utilisateur)
+            $users = $query->with([
+                'admin:id,id_user_cession,nom_prenom,telephone',
+                'enseignant:id,id_user_cession,nom_prenom,telephone',
+                'etudiants:id,id_user_cession,nom_prenom,telephone',
+            ])->orderBy('user_cession.created_at', 'desc')->get();
 
-            // Récupération des profils de manière sécurisée
             $result = $users->map(function ($u) {
-                $profile = null;
-                
-                try {
-                    if ($u->role === 'etudiant') {
-                        $profile = DB::table('etudiants')
-                                   ->where('id_user_cession', $u->id)
-                                   ->select('nom_prenom', 'telephone')
-                                   ->first();
-                    } elseif (in_array($u->role, ['prof', 'enseignant'])) {
-                        $profile = DB::table('corps_enseignant')
-                                   ->where('id_user_cession', $u->id)
-                                   ->select('nom_prenom', 'telephone')
-                                   ->first();
-                    } elseif ($u->role === 'admin') {
-                        $profile = DB::table('admins')
-                                   ->where('id_user_cession', $u->id)
-                                   ->select('nom_prenom', 'telephone')
-                                   ->first();
-                    }
-                } catch (\Exception $e) {
-                    Log::warning("Erreur lors de la récupération du profil pour user {$u->id}: " . $e->getMessage());
-                    $profile = null;
-                }
+                $profile = match ($u->role) {
+                    'admin'    => $u->admin,
+                    'prof'     => $u->enseignant,
+                    'etudiant' => $u->etudiants,
+                    default    => null,
+                };
 
                 return [
                     'id' => $u->id,
@@ -69,8 +56,8 @@ class UserCessionController extends Controller
                     'email' => $u->email,
                     'role' => $u->role,
                     'is_verified' => (bool) $u->is_verified,
-                    'nom_prenom' => $profile->nom_prenom ?? null,
-                    'telephone' => $profile->telephone ?? null,
+                    'nom_prenom' => $profile?->nom_prenom,
+                    'telephone' => $profile?->telephone,
                     'created_at' => $u->created_at,
                     'updated_at' => $u->updated_at,
                 ];
@@ -84,7 +71,7 @@ class UserCessionController extends Controller
             
             return response()->json([
                 'error' => 'Erreur lors de la récupération des utilisateurs',
-                'message' => config('app.debug') ? $e->getMessage() : 'Erreur interne du serveur'
+                'message' => 'Erreur interne du serveur'
             ], 500);
         }
     }
@@ -92,8 +79,12 @@ class UserCessionController extends Controller
     /**
      * PATCH /api/user-cessions/{id}/toggle
      */
-    public function toggle($id)
+    public function toggle(Request $request, $id)
     {
+        if ((int) $id === $request->user()->id) {
+            return response()->json(['message' => 'Vous ne pouvez pas désactiver votre propre compte.'], 422);
+        }
+
         try {
             $user = User::findOrFail($id);
             $user->is_verified = !$user->is_verified;
@@ -111,7 +102,7 @@ class UserCessionController extends Controller
             
             return response()->json([
                 'error' => 'Erreur lors de la mise à jour',
-                'message' => config('app.debug') ? $e->getMessage() : 'Erreur interne du serveur'
+                'message' => 'Erreur interne du serveur'
             ], 500);
         }
     }
@@ -128,8 +119,9 @@ class UserCessionController extends Controller
                 'is_verified' => 'required|boolean'
             ]);
 
-            $userIds = $request->input('user_ids');
-            $isVerified = $request->input('is_verified');
+            // L'admin connecté est toujours exclu : il ne peut pas se bloquer lui-même
+            $userIds = array_values(array_diff($request->input('user_ids'), [$request->user()->id]));
+            $isVerified = $request->boolean('is_verified');
 
             Log::info("Bulk toggle for users: " . implode(',', $userIds) . " to " . ($isVerified ? 'verified' : 'unverified'));
 
@@ -165,8 +157,27 @@ class UserCessionController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Erreur lors de la mise à jour en lot',
-                'error' => config('app.debug') ? $e->getMessage() : 'Erreur interne du serveur'
+                'error' => 'Erreur interne du serveur'
             ], 500);
         }
+    }
+
+    /**
+     * GET /api/user-cessions/stats : nombre de comptes actifs / inactifs par rôle
+     */
+    public function stats()
+    {
+        $rows = User::selectRaw('role, is_verified, COUNT(*) as total')
+            ->groupBy('role', 'is_verified')
+            ->get();
+
+        $stats = [];
+        foreach (['admin', 'prof', 'etudiant'] as $role) {
+            $actifs = (int) $rows->where('role', $role)->where('is_verified', true)->sum('total');
+            $inactifs = (int) $rows->where('role', $role)->where('is_verified', false)->sum('total');
+            $stats[$role] = ['actifs' => $actifs, 'inactifs' => $inactifs, 'total' => $actifs + $inactifs];
+        }
+
+        return response()->json($stats);
     }
 }

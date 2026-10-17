@@ -61,7 +61,6 @@ Route::middleware('auth:sanctum')->group(function () {
 
         // Emploi du temps
         Route::post('/emplois', [EmploiDuTempsController::class, 'store']);
-        Route::put('/emplois/{id}', [EmploiDuTempsController::class, 'update']);
         Route::delete('/emplois/{id}', [EmploiDuTempsController::class, 'destroy']);
         Route::post('/emplois/{id}/upload', [EmploiDuTempsController::class, 'updateImage']);
 

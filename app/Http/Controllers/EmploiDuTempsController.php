@@ -16,8 +16,10 @@ class EmploiDuTempsController extends Controller
     public function updateImage(Request $request, $id)
     {
         $request->validate([
-            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
-            // 'email' => 'required|string|email',
+            'image' => 'required|image|mimes:jpeg,png,jpg,webp|max:5120',
+        ], [
+            'image.required' => 'Veuillez choisir une image.',
+            'image.max'      => "L'image ne doit pas dépasser 5 Mo.",
         ]);
 
         $emploi = Edt::findOrFail($id);
@@ -40,7 +42,7 @@ class EmploiDuTempsController extends Controller
             $emploi->image_url = $relativePath;
         }
 
-        // $emploi->updated_by = $request->input('email');
+        $emploi->updated_by = $request->user()->email;
         $emploi->save();
 
         return response()->json(['image_url' => $emploi->image_url], 200);
@@ -49,8 +51,11 @@ class EmploiDuTempsController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'image' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048',
+            'image' => 'required|image|mimes:jpeg,png,jpg,webp|max:5120',
             'semestre' => 'required|integer|in:1,2',
+        ], [
+            'image.required' => 'Veuillez choisir une image.',
+            'image.max'      => "L'image ne doit pas dépasser 5 Mo.",
         ]);
 
         $image = $request->file('image');
@@ -60,6 +65,7 @@ class EmploiDuTempsController extends Controller
         $emploi = Edt::create([
             'image_url' => $relativePath,
             'semestre' => $request->semestre,
+            'updated_by' => $request->user()->email,
         ]);
 
         return response()->json($emploi, 201);

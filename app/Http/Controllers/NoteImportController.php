@@ -2,119 +2,130 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use App\Models\Matiere;
-use App\Models\Niveau;
 use App\Models\AnneeAca;
 use App\Models\Etudiant;
 use App\Models\EtudiantParcours;
+use App\Models\Matiere;
+use App\Models\Niveau;
 use App\Models\Note;
-use Illuminate\Support\Facades\Validator;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Maatwebsite\Excel\Facades\Excel;
-use Illuminate\Support\Facades\Log;
 
+/**
+ * Import Excel des notes d'une matière.
+ * Nom de fichier attendu : NOTES_<CODE_MATIERE>_<NIVEAU>_<ANNEE>.xlsx (ex : NOTES_FRS_L1_2025-2026.xlsx)
+ * Colonnes obligatoires (ligne 1) : matricule, note
+ */
 class NoteImportController extends Controller
 {
     public function import(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'file' => 'required|file|mimes:xlsx,xls,csv|max:10240',
+        $request->validate([
+            'file' => ['required', 'file', 'mimes:xlsx,xls,csv', 'max:10240'],
+        ], [
+            'file.required' => 'Veuillez choisir un fichier.',
+            'file.mimes'    => 'Le fichier doit être au format Excel (.xlsx, .xls) ou CSV.',
+            'file.max'      => 'Le fichier ne doit pas dépasser 10 Mo.',
         ]);
 
-        if ($validator->fails()) {
-            return response()->json(['message' => 'Fichier invalide', 'errors' => $validator->errors()], 422);
-        }
-
         $file = $request->file('file');
-        $filename = $file->getClientOriginalName();
 
-        // Exemple attendu : NOTES_FRS_L1_2022-2023.xlsx
-        if (!preg_match('/^NOTES_([A-Z0-9]+)_L([1-3])_([0-9]{4}-[0-9]{4})\.xlsx$/', $filename, $matches)) {
-            return response()->json(['message' => 'Le nom du fichier doit suivre le format : NOTES_<CODE_MATIERE>_L<NIVEAU>_<ANNEE>.xlsx'], 400);
+        if (!preg_match('/^NOTES_([A-Za-z0-9]+)_(?:L)?([A-Za-z]?[0-9])_([0-9]{4}-[0-9]{4})\.(xlsx|xls|csv)$/i', $file->getClientOriginalName(), $m)) {
+            return response()->json([
+                'message' => 'Nom de fichier invalide. Format attendu : NOTES_<CODE_MATIERE>_L1_2025-2026.xlsx',
+            ], 422);
         }
 
-        [$fullMatch, $codeMatiere, $niveauNum, $anneeAcaStr] = $matches;
+        [, $codeMatiere, $niveauCode, $anneeLabel] = $m;
+        $niveauLibelle = ctype_digit($niveauCode) ? 'L' . $niveauCode : strtoupper($niveauCode);
 
-        // Récupérer les IDs correspondants
         $matiere = Matiere::where('code_matiere', $codeMatiere)->first();
-        $niveau = Niveau::where('niveau', 'L' . $niveauNum)->first();
-        $annee = AnneeAca::where('annee_aca', $anneeAcaStr)->first();
+        $niveau  = Niveau::where('niveau', $niveauLibelle)->first();
+        $annee   = AnneeAca::where('annee_aca', $anneeLabel)->first();
 
-        if (!$matiere || !$niveau || !$annee) {
+        $manquants = array_keys(array_filter([
+            "matière {$codeMatiere}"          => !$matiere,
+            "niveau {$niveauLibelle}"         => !$niveau,
+            "année académique {$anneeLabel}"  => !$annee,
+        ]));
+        if ($manquants) {
+            return response()->json(['message' => 'Introuvable dans la base : ' . implode(', ', $manquants) . '.'], 422);
+        }
+
+        if ((int) $matiere->id_niveau !== (int) $niveau->id) {
             return response()->json([
-                'message' => 'Matière, niveau ou année académique introuvable dans la base de données.',
-                'details' => compact('codeMatiere', 'niveauNum', 'anneeAcaStr')
-            ], 404);
+                'message' => "La matière {$codeMatiere} n'appartient pas au niveau {$niveauLibelle}.",
+            ], 422);
         }
 
         try {
-            $data = Excel::toArray([], $file)[0]; // Première feuille uniquement
+            $data = Excel::toArray([], $file)[0] ?? [];
+        } catch (\Throwable $e) {
+            return response()->json(['message' => 'Impossible de lire le fichier.'], 422);
+        }
 
-            if (count($data) < 2) {
-                return response()->json(['message' => 'Le fichier semble vide ou ne contient pas de données valides.'], 400);
-            }
+        if (count($data) < 2) {
+            return response()->json(['message' => 'Le fichier ne contient aucune note.'], 422);
+        }
 
-            $header = array_map('strtolower', $data[0]);
-            if (!in_array('note', $header) || !in_array('matricule', $header)) {
-                return response()->json(['message' => 'Le fichier doit contenir les colonnes : note, matricule'], 400);
-            }
+        $header = array_map(fn ($h) => strtolower(trim((string) $h)), $data[0]);
+        $matriculeIndex = array_search('matricule', $header, true);
+        $noteIndex = array_search('note', $header, true);
+        if ($matriculeIndex === false || $noteIndex === false) {
+            return response()->json(['message' => 'Le fichier doit contenir les colonnes « matricule » et « note » en première ligne.'], 422);
+        }
 
-            $matriculeIndex = array_search('matricule', $header);
-            $noteIndex = array_search('note', $header);
+        $inserted = 0;
+        $errors = [];
 
-            $inserted = 0;
-            $errors = [];
-
+        DB::transaction(function () use ($data, $matriculeIndex, $noteIndex, $niveau, $annee, $matiere, $niveauLibelle, $anneeLabel, &$inserted, &$errors) {
             for ($i = 1; $i < count($data); $i++) {
+                $ligne = $i + 1; // numéro de ligne tel qu'affiché dans Excel
                 $row = $data[$i];
-                $matricule = trim($row[$matriculeIndex] ?? '');
-                $noteValue = str_replace(',', '.', trim($row[$noteIndex] ?? ''));
+                $matricule = trim((string) ($row[$matriculeIndex] ?? ''));
+                $noteValue = str_replace(',', '.', trim((string) ($row[$noteIndex] ?? '')));
 
-                if (!$matricule || !is_numeric($noteValue)) {
-                    $errors[] = "Ligne $i : données manquantes ou invalides (matricule ou note)";
+                if ($matricule === '' && $noteValue === '') {
+                    continue; // ligne vide
+                }
+                if ($matricule === '' || !is_numeric($noteValue)) {
+                    $errors[] = "Ligne {$ligne} : matricule ou note manquant(e) / invalide";
+                    continue;
+                }
+                $noteValue = (float) $noteValue;
+                if ($noteValue < 0 || $noteValue > 20) {
+                    $errors[] = "Ligne {$ligne} : note {$noteValue} hors de l'intervalle 0 – 20";
                     continue;
                 }
 
                 $etudiant = Etudiant::where('matricule', $matricule)->first();
                 if (!$etudiant) {
-                    $errors[] = "Ligne $i : étudiant avec matricule [$matricule] non trouvé";
+                    $errors[] = "Ligne {$ligne} : étudiant {$matricule} introuvable";
                     continue;
                 }
 
-                $parcours = EtudiantParcours::where([
-                    ['id_etudiant', '=', $etudiant->id],
-                    ['id_niveau', '=', $niveau->id],
-                    ['id_annee_aca', '=', $annee->id]
-                ])->first();
-
+                $parcours = EtudiantParcours::where('id_etudiant', $etudiant->id)
+                    ->where('id_niveau', $niveau->id)
+                    ->where('id_annee_aca', $annee->id)
+                    ->first();
                 if (!$parcours) {
-                    $errors[] = "Ligne $i : aucun parcours trouvé pour [$matricule] en L$niveauNum - $anneeAcaStr";
+                    $errors[] = "Ligne {$ligne} : {$matricule} n'est pas inscrit en {$niveauLibelle} pour {$anneeLabel}";
                     continue;
                 }
 
-                // Mise à jour ou insertion
-                $note = Note::updateOrCreate(
-                    [
-                        'id_etudiant_parcours' => $parcours->id,
-                        'id_matiere' => $matiere->id
-                    ],
-                    [
-                        'note' => $noteValue,
-                        'statut' => '',
-                    ]
+                Note::updateOrCreate(
+                    ['id_etudiant_parcours' => $parcours->id, 'id_matiere' => $matiere->id],
+                    ['note' => $noteValue, 'statut' => '']
                 );
-
                 $inserted++;
             }
+        });
 
-            return response()->json([
-                'message' => "$inserted note(s) importée(s) avec succès.",
-                'errors' => $errors
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error('Erreur import notes : ' . $e->getMessage());
-            return response()->json(['message' => 'Erreur lors du traitement du fichier', 'error' => $e->getMessage()], 500);
-        }
+        return response()->json([
+            'message' => "{$inserted} note(s) importée(s) avec succès.",
+            'imported' => $inserted,
+            'errors' => $errors,
+        ]);
     }
 }

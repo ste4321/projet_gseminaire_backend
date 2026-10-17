@@ -2,20 +2,22 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
+use App\Models\EtudiantParcours;
+use App\Models\Matiere;
 use App\Models\Niveau;
+use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class NiveauController extends Controller
 {
     public function index()
     {
-        return Niveau::all();
+        return Niveau::orderBy('niveau')->get();
     }
 
     public function store(Request $request)
     {
-        $request->validate(['niveau' => 'required|string']);
-        return Niveau::create($request->all());
+        return response()->json(Niveau::create($this->validated($request)), 201);
     }
 
     public function show($id)
@@ -26,13 +28,33 @@ class NiveauController extends Controller
     public function update(Request $request, $id)
     {
         $niveau = Niveau::findOrFail($id);
-        $niveau->update($request->all());
+        $niveau->update($this->validated($request, $niveau));
         return $niveau;
     }
 
     public function destroy($id)
     {
-        Niveau::findOrFail($id)->delete();
-        return response()->json(['message' => 'Supprimé']);
+        $niveau = Niveau::findOrFail($id);
+
+        // La suppression effacerait en cascade matières, inscriptions, notes et annonces
+        $inscrits = EtudiantParcours::where('id_niveau', $niveau->id)->count();
+        $matieres = Matiere::where('id_niveau', $niveau->id)->count();
+        if ($inscrits || $matieres) {
+            return response()->json([
+                'message' => "Impossible de supprimer {$niveau->niveau} : {$inscrits} inscription(s) et {$matieres} matière(s) y sont rattachées.",
+            ], 409);
+        }
+
+        $niveau->delete();
+        return response()->json(['message' => 'Niveau supprimé.']);
+    }
+
+    private function validated(Request $request, ?Niveau $niveau = null): array
+    {
+        $request->merge(['niveau' => strtoupper(trim((string) $request->input('niveau')))]);
+
+        return $request->validate([
+            'niveau' => ['required', 'string', 'max:20', Rule::unique('niveaux', 'niveau')->ignore($niveau?->id)],
+        ], ['niveau.unique' => 'Ce niveau existe déjà.']);
     }
 }
