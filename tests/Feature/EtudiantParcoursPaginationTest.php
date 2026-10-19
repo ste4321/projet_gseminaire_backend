@@ -38,7 +38,7 @@ class EtudiantParcoursPaginationTest extends TestCase
             ->assertJsonPath('total', 12)
             ->assertJsonPath('last_page', 2)
             ->assertJsonCount(2, 'data')
-            ->assertJsonPath('data.0.etudiant.matricule', 'L1-11')
+            ->assertJsonPath('data.0.etudiant.matricule', 'L1-2') // du plus récent au plus ancien : page 2 = les deux premiers inscrits
             ->assertJsonPath('data.0.niveau.niveau', 'L1')
             ->assertJsonPath('data.0.annee_academique.annee_aca', '2025-2026');
     }

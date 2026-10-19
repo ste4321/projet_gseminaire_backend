@@ -49,7 +49,7 @@ class EtudiantParcoursController extends Controller
                     ->orWhere('diocese', 'ilike', $motif)
                     ->orWhere('telephone', 'ilike', $motif)));
             })
-            ->orderBy('id');
+            ->orderByDesc('id'); // derniers inscrits en premier
 
         return response()->json($requete->paginate($filtres['per_page'] ?? 10));
     }
