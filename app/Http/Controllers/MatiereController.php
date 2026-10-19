@@ -69,13 +69,24 @@ class MatiereController extends Controller
 
     private function rules(?Matiere $matiere = null): array
     {
+        $niveau = request('id_niveau');
+        $semestre = request('id_semestre');
+
         return [
             'matiere'      => ['required', 'string', 'max:255'],
             'heures'       => ['required', 'integer', 'min:0', 'max:1000'],
             'id_niveau'    => ['required', 'exists:niveaux,id'],
             'id_semestre'  => ['nullable', 'exists:semestres,id'],
-            // Le code sert à l'import des notes (NOTES_<CODE>_L1_2025-2026.xlsx)
-            'code_matiere' => ['required', 'string', 'max:50', 'regex:/^[A-Za-z0-9]+$/', Rule::unique('matieres', 'code_matiere')->ignore($matiere?->id)],
+            // Facultatif. Le même code peut servir à plusieurs niveaux ou semestres (THG en L1 et en L2) :
+            // l'import des notes le retrouve par code + niveau + semestre (NOTES_THG_L2_S1_2025-2026.xlsx).
+            // Il n'est donc unique qu'au sein d'un même niveau et d'un même semestre.
+            'code_matiere' => [
+                'nullable', 'string', 'max:50',
+                Rule::unique('matieres', 'code_matiere')
+                    ->where('id_niveau', $niveau)
+                    ->where(fn ($q) => $semestre ? $q->where('id_semestre', $semestre) : $q->whereNull('id_semestre'))
+                    ->ignore($matiere?->id),
+            ],
             'coefficient'  => ['required', 'numeric', 'min:0', 'max:100'],
         ];
     }
@@ -83,9 +94,7 @@ class MatiereController extends Controller
     private function messages(): array
     {
         return [
-            'code_matiere.required' => 'Le code matière est obligatoire.',
-            'code_matiere.unique'   => 'Ce code matière existe déjà.',
-            'code_matiere.regex'    => 'Le code matière ne doit contenir que des lettres et des chiffres (sans espace).',
+            'code_matiere.unique'   => 'Ce code est déjà utilisé par une autre matière du même niveau et du même semestre.',
         ];
     }
 }

@@ -98,11 +98,26 @@ class NotesReferentielTest extends TestCase
         $this->assertSame(1, Note::count());
     }
 
-    public function test_matiere_sans_code_refusee_au_lieu_d_une_erreur_500(): void
+    public function test_code_matiere_facultatif_mais_unique(): void
     {
-        $this->postJson('/api/matieres', ['matiere' => 'Latin', 'heures' => 20, 'id_niveau' => $this->matiere->id_niveau, 'coefficient' => 1])
+        $base = ['matiere' => 'Latin', 'heures' => 20, 'id_niveau' => $this->matiere->id_niveau, 'coefficient' => 1];
+
+        // Sans code (absent ou vide) : acceptée
+        $this->postJson('/api/matieres', $base)->assertCreated()->assertJsonPath('code_matiere', null);
+        $this->postJson('/api/matieres', $base + ['code_matiere' => ''])->assertCreated();
+
+        // Format libre
+        $this->postJson('/api/matieres', $base + ['code_matiere' => 'LAT-1 b'])->assertCreated();
+
+        // Même code dans le même niveau et le même semestre : refusé (l'import des notes serait ambigu)
+        $this->postJson('/api/matieres', $base + ['code_matiere' => 'FRS', 'id_semestre' => $this->matiere->id_semestre])
             ->assertStatus(422)
             ->assertJsonValidationErrors('code_matiere');
+
+        // Même code dans un autre niveau : accepté (le fichier d'import précise le niveau)
+        $autreNiveau = \App\Models\Niveau::create(['niveau' => 'L2']);
+        $this->postJson('/api/matieres', ['code_matiere' => 'FRS', 'id_niveau' => $autreNiveau->id, 'id_semestre' => $this->matiere->id_semestre] + $base)
+            ->assertCreated();
     }
 
     public function test_admin_ne_peut_pas_se_desactiver(): void

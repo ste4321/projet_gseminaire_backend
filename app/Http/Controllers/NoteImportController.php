@@ -8,17 +8,25 @@ use App\Models\EtudiantParcours;
 use App\Models\Matiere;
 use App\Models\Niveau;
 use App\Models\Note;
+use App\Models\Semestre;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Maatwebsite\Excel\Facades\Excel;
 
 /**
  * Import Excel des notes d'une matière.
- * Nom de fichier attendu : NOTES_<CODE_MATIERE>_<NIVEAU>_<ANNEE>.xlsx (ex : NOTES_FRS_L1_2025-2026.xlsx)
+ * Nom de fichier attendu : NOTES_<CODE_MATIERE>_<NIVEAU>_<SEMESTRE>_<ANNEE>.xlsx
+ *   ex : NOTES_FRS_L1_S1_2025-2026.xlsx
+ * Le niveau et le semestre doivent être ceux de la matière : un fichier préparé pour le
+ * mauvais semestre est refusé au lieu d'écrire des notes au mauvais endroit.
  * Colonnes obligatoires (ligne 1) : matricule, note
  */
 class NoteImportController extends Controller
 {
+    // CODE : tout sauf « _ » (séparateur) ; NIVEAU : L1, 1, M2… ; SEMESTRE : S1, S2…
+    private const FORMAT_NOM = '/^NOTES_([^_]+)_(?:L)?([A-Za-z]?[0-9])_(S[0-9]+)_([0-9]{4}-[0-9]{4})\.(xlsx|xls|csv)$/i';
+    private const ANCIEN_FORMAT = '/^NOTES_[^_]+_[A-Za-z]?[0-9]_[0-9]{4}-[0-9]{4}\.(xlsx|xls|csv)$/i';
+
     public function import(Request $request)
     {
         $request->validate([
@@ -31,31 +39,47 @@ class NoteImportController extends Controller
 
         $file = $request->file('file');
 
-        if (!preg_match('/^NOTES_([A-Za-z0-9]+)_(?:L)?([A-Za-z]?[0-9])_([0-9]{4}-[0-9]{4})\.(xlsx|xls|csv)$/i', $file->getClientOriginalName(), $m)) {
-            return response()->json([
-                'message' => 'Nom de fichier invalide. Format attendu : NOTES_<CODE_MATIERE>_L1_2025-2026.xlsx',
-            ], 422);
+        $nomFichier = $file->getClientOriginalName();
+        if (!preg_match(self::FORMAT_NOM, $nomFichier, $m)) {
+            $message = 'Nom de fichier invalide. Format attendu : NOTES_<CODE_MATIERE>_<NIVEAU>_<SEMESTRE>_<ANNÉE>.xlsx (ex : NOTES_FRS_L1_S1_2025-2026.xlsx).';
+            if (preg_match(self::ANCIEN_FORMAT, $nomFichier)) {
+                $message .= ' Le semestre (S1, S2…) est désormais obligatoire dans le nom.';
+            }
+            return response()->json(['message' => $message], 422);
         }
 
-        [, $codeMatiere, $niveauCode, $anneeLabel] = $m;
+        [, $codeMatiere, $niveauCode, $semestreCode, $anneeLabel] = $m;
         $niveauLibelle = ctype_digit($niveauCode) ? 'L' . $niveauCode : strtoupper($niveauCode);
+        $semestreCode = strtoupper($semestreCode);
 
-        $matiere = Matiere::where('code_matiere', $codeMatiere)->first();
-        $niveau  = Niveau::where('niveau', $niveauLibelle)->first();
-        $annee   = AnneeAca::where('annee_aca', $anneeLabel)->first();
+        $niveau   = Niveau::where('niveau', $niveauLibelle)->first();
+        $semestre = Semestre::whereRaw('UPPER(code_semestre) = ?', [$semestreCode])->first();
+        $annee    = AnneeAca::where('annee_aca', $anneeLabel)->first();
 
         $manquants = array_keys(array_filter([
-            "matière {$codeMatiere}"          => !$matiere,
             "niveau {$niveauLibelle}"         => !$niveau,
+            "semestre {$semestreCode}"        => !$semestre,
             "année académique {$anneeLabel}"  => !$annee,
         ]));
         if ($manquants) {
             return response()->json(['message' => 'Introuvable dans la base : ' . implode(', ', $manquants) . '.'], 422);
         }
 
-        if ((int) $matiere->id_niveau !== (int) $niveau->id) {
+        // Un même code peut exister à plusieurs niveaux / semestres : le nom du fichier les départage
+        $matiere = Matiere::where('code_matiere', $codeMatiere)
+            ->where('id_niveau', $niveau->id)
+            ->where('id_semestre', $semestre->id)
+            ->first();
+
+        if (!$matiere) {
+            $ailleurs = Matiere::with(['niveau', 'semestre'])->where('code_matiere', $codeMatiere)->get()
+                ->map(fn ($x) => trim(($x->niveau?->niveau ?? '?') . ' · ' . ($x->semestre?->code_semestre ?? 'sans semestre')))
+                ->unique()->implode(', ');
+
             return response()->json([
-                'message' => "La matière {$codeMatiere} n'appartient pas au niveau {$niveauLibelle}.",
+                'message' => $ailleurs
+                    ? "Aucune matière {$codeMatiere} en {$niveauLibelle} · {$semestreCode}. Ce code existe en : {$ailleurs}."
+                    : "Aucune matière n'a le code {$codeMatiere}.",
             ], 422);
         }
 
@@ -123,7 +147,7 @@ class NoteImportController extends Controller
         });
 
         return response()->json([
-            'message' => "{$inserted} note(s) importée(s) avec succès.",
+            'message' => "{$inserted} note(s) importée(s) avec succès en {$matiere->matiere} ({$niveauLibelle} · {$semestreCode} · {$anneeLabel}).",
             'imported' => $inserted,
             'errors' => $errors,
         ]);
