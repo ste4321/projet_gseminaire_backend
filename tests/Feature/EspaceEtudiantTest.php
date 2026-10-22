@@ -33,9 +33,9 @@ class EspaceEtudiantTest extends TestCase
         $s1 = $this->s1 = Semestre::create(['semestre' => 'Semestre 1', 'code_semestre' => 'S1']);
         $s2 = $this->s2 = Semestre::create(['semestre' => 'Semestre 2', 'code_semestre' => 'S2']);
 
-        $latin = Matiere::create(['matiere' => 'Latin', 'heures' => 20, 'id_niveau' => $this->niveaux['L1']->id, 'code_matiere' => 'LAT', 'coefficient' => '1', 'id_semestre' => $s1->id]);
-        $theo = Matiere::create(['matiere' => 'Théologie', 'heures' => 40, 'id_niveau' => $this->niveaux['L1']->id, 'code_matiere' => 'THEO', 'coefficient' => '3', 'id_semestre' => $s1->id]);
-        Matiere::create(['matiere' => 'Grec', 'heures' => 20, 'id_niveau' => $this->niveaux['L1']->id, 'code_matiere' => 'GREC', 'coefficient' => '2', 'id_semestre' => $s2->id]);
+        $latin = $this->matiereAuProgramme(['matiere' => 'Latin', 'heures' => 20, 'id_niveau' => $this->niveaux['L1']->id, 'code_matiere' => 'LAT', 'coefficient' => '1', 'id_semestre' => $s1->id]);
+        $theo = $this->matiereAuProgramme(['matiere' => 'Théologie', 'heures' => 40, 'id_niveau' => $this->niveaux['L1']->id, 'code_matiere' => 'THEO', 'coefficient' => '3', 'id_semestre' => $s1->id]);
+        $this->matiereAuProgramme(['matiere' => 'Grec', 'heures' => 20, 'id_niveau' => $this->niveaux['L1']->id, 'code_matiere' => 'GREC', 'coefficient' => '2', 'id_semestre' => $s2->id]);
 
         $this->compte = $this->user('etudiant');
         $this->parcours = $this->inscrire('E001', $this->compte, 'L1');

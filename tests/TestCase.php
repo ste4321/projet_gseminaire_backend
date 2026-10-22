@@ -4,6 +4,8 @@ namespace Tests;
 
 use App\Models\Admin;
 use App\Models\AnneeAca;
+use App\Models\Matiere;
+use App\Models\ProgrammeMatiere;
 use App\Models\Niveau;
 use App\Models\User;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
@@ -52,5 +54,19 @@ abstract class TestCase extends BaseTestCase
         $niveaux = collect(['L1', 'L2', 'L3'])->mapWithKeys(fn ($n) => [$n => Niveau::create(['niveau' => $n])]);
 
         return [$annee, $niveaux];
+    }
+
+    /** Matière du catalogue, mise au programme des années existantes (avec son coefficient et ses heures) */
+    protected function matiereAuProgramme(array $attributs): Matiere
+    {
+        $matiere = Matiere::create($attributs);
+        foreach (AnneeAca::pluck('id') as $annee) {
+            ProgrammeMatiere::create([
+                'id_annee_aca' => $annee, 'id_matiere' => $matiere->id,
+                'coefficient' => $matiere->coefficient, 'heures' => $matiere->heures,
+            ]);
+        }
+
+        return $matiere;
     }
 }

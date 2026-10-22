@@ -19,6 +19,7 @@ use Maatwebsite\Excel\Facades\Excel;
  *   ex : NOTES_FRS_L1_S1_2025-2026.xlsx
  * Le niveau et le semestre doivent être ceux de la matière : un fichier préparé pour le
  * mauvais semestre est refusé au lieu d'écrire des notes au mauvais endroit.
+ * La matière doit être au programme de l'année du fichier.
  * Colonnes obligatoires (ligne 1) : matricule, note
  */
 class NoteImportController extends Controller
@@ -80,6 +81,14 @@ class NoteImportController extends Controller
                 'message' => $ailleurs
                     ? "Aucune matière {$codeMatiere} en {$niveauLibelle} · {$semestreCode}. Ce code existe en : {$ailleurs}."
                     : "Aucune matière n'a le code {$codeMatiere}.",
+            ], 422);
+        }
+
+        // La matière doit être enseignée l'année du fichier : sinon ses notes n'apparaîtraient dans aucun relevé
+        if (!$matiere->programmes()->where('id_annee_aca', $annee->id)->exists()) {
+            return response()->json([
+                'message' => "{$matiere->matiere} ({$codeMatiere}) n'est pas au programme {$niveauLibelle} de {$anneeLabel}. "
+                    . "Ajoutez-la au programme de cette année dans le module Matières, puis relancez l'import.",
             ], 422);
         }
 

@@ -27,7 +27,7 @@ class NotesReferentielTest extends TestCase
         $this->actingAs($this->admin, 'sanctum');
 
         $semestre = Semestre::create(['semestre' => 'Semestre 1']);
-        $this->matiere = Matiere::create([
+        $this->matiere = $this->matiereAuProgramme([
             'matiere' => 'Français', 'heures' => 30, 'id_niveau' => $niveaux['L1']->id,
             'code_matiere' => 'FRS', 'coefficient' => '2', 'id_semestre' => $semestre->id,
         ]);

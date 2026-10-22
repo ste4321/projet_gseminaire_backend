@@ -27,7 +27,7 @@ class NoteImportTest extends TestCase
         $s1 = Semestre::create(['semestre' => 'Semestre 1', 'code_semestre' => 'S1']);
         Semestre::create(['semestre' => 'Semestre 2', 'code_semestre' => 'S2']);
 
-        $this->matiere = Matiere::create([
+        $this->matiere = $this->matiereAuProgramme([
             'matiere' => 'Français', 'heures' => 30, 'id_niveau' => $niveaux['L1']->id,
             'code_matiere' => 'FRS', 'coefficient' => 2, 'id_semestre' => $s1->id,
         ]);
@@ -88,7 +88,7 @@ class NoteImportTest extends TestCase
     public function test_meme_code_a_deux_niveaux_le_fichier_choisit_la_bonne_matiere(): void
     {
         $l2 = \App\Models\Niveau::where('niveau', 'L2')->first();
-        $frsL2 = Matiere::create([
+        $frsL2 = $this->matiereAuProgramme([
             'matiere' => 'Français avancé', 'heures' => 30, 'id_niveau' => $l2->id,
             'code_matiere' => 'FRS', 'coefficient' => 2, 'id_semestre' => $this->matiere->id_semestre,
         ]);
