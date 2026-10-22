@@ -9,8 +9,36 @@ class AnneeAca extends Model
 {
     protected $table = 'annee_aca';
     protected $fillable = ['annee_aca'];
+
+    protected static function booted(): void
+    {
+        // Nouvelle année (ex. créée par l'import des étudiants) : elle reprend le programme de l'année précédente,
+        // que l'administration ajuste ensuite dans le module Matières
+        static::created(function (AnneeAca $annee) {
+            $precedente = static::where('id', '<', $annee->id)->orderByDesc('id')->value('id');
+            if ($precedente) {
+                ProgrammeMatiere::copier($precedente, $annee->id);
+            }
+        });
+    }
+
+    /**
+     * Année en cours : la plus récente qui a des étudiants inscrits.
+     * Une année créée à l'avance (encore sans inscrits) n'est pas retenue ; sans aucun inscrit, la plus récente.
+     */
+    public static function courante(): ?self
+    {
+        return static::whereHas('parcours')->orderByDesc('id')->first()
+            ?? static::orderByDesc('id')->first();
+    }
+
     public function parcours()
     {
         return $this->hasMany(EtudiantParcours::class, 'id_annee_aca');
+    }
+
+    public function programme()
+    {
+        return $this->hasMany(ProgrammeMatiere::class, 'id_annee_aca');
     }
 }

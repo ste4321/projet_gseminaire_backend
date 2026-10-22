@@ -20,6 +20,7 @@ use App\Http\Controllers\EtudiantImportController;
 use App\Http\Controllers\NoteController;
 use App\Http\Controllers\NoteImportController;
 use App\Http\Controllers\PasswordController;
+use App\Http\Controllers\ProgrammeController;
 use App\Http\Controllers\PublicationNoteController;
 use App\Http\Controllers\EspaceEtudiantController;
 use App\Http\Controllers\UserCessionController;
@@ -104,6 +105,7 @@ Route::middleware(['auth:sanctum', 'consultation.lecture'])->group(function () {
         Route::delete('/infos/{id}', [InfoController::class, 'destroy']);
 
         // Référentiels
+        Route::post('/annee_aca', [AnneeAcaController::class, 'store']);
         Route::apiResource('niveaux', NiveauController::class)->except('index');
         Route::apiResource('semestres', SemestreController::class)->except('index');
 
@@ -114,6 +116,13 @@ Route::middleware(['auth:sanctum', 'consultation.lecture'])->group(function () {
             Route::post('/', [MatiereController::class, 'store']);
             Route::put('/{id}', [MatiereController::class, 'update']);
             Route::delete('/{id}', [MatiereController::class, 'destroy']);
+        });
+
+        // Programme d'une année académique (matières enseignées, coefficient de l'année)
+        Route::prefix('programme')->group(function () {
+            Route::post('/', [ProgrammeController::class, 'store']);
+            Route::delete('/', [ProgrammeController::class, 'destroy']);
+            Route::post('/copier', [ProgrammeController::class, 'copier']);
         });
 
         // Notes (import déclaré avant les routes paramétrées)

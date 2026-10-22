@@ -32,7 +32,7 @@ class DashboardTest extends TestCase
         $this->user('prof', verified: false);
 
         $semestre = Semestre::create(['semestre' => 'Semestre 1', 'code_semestre' => 'S1']);
-        $matiere = Matiere::create([
+        $matiere = $this->matiereAuProgramme([
             'matiere' => 'Latin', 'heures' => 20, 'id_niveau' => $niveaux['L1']->id,
             'code_matiere' => 'LAT', 'coefficient' => '1', 'id_semestre' => $semestre->id,
         ]);

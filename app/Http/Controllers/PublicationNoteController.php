@@ -30,9 +30,10 @@ class PublicationNoteController extends Controller
             ->get()
             ->keyBy('id_semestre');
 
-        return Matiere::with('semestre')
-            ->where('id_niveau', $niveau)
-            ->whereNotNull('id_semestre')
+        return Matiere::auProgramme($annee)
+            ->with('semestre')
+            ->where('matieres.id_niveau', $niveau)
+            ->whereNotNull('matieres.id_semestre')
             ->get()
             ->groupBy('id_semestre')
             ->map(function ($matieres, $idSemestre) use ($parcoursIds, $publications) {

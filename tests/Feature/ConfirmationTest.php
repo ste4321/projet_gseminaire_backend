@@ -19,7 +19,7 @@ class ConfirmationTest extends TestCase
     {
         [$annee, $niveaux] = $this->referentiel();
         $semestre = Semestre::create(['semestre' => 'Semestre 1', 'code_semestre' => 'S1']);
-        Matiere::create(['matiere' => 'Latin', 'heures' => 20, 'id_niveau' => $niveaux['L1']->id, 'code_matiere' => 'LAT', 'coefficient' => '1', 'id_semestre' => $semestre->id]);
+        $this->matiereAuProgramme(['matiere' => 'Latin', 'heures' => 20, 'id_niveau' => $niveaux['L1']->id, 'code_matiere' => 'LAT', 'coefficient' => '1', 'id_semestre' => $semestre->id]);
 
         return ['id_annee_aca' => $annee->id, 'id_niveau' => $niveaux['L1']->id, 'id_semestre' => $semestre->id];
     }

@@ -49,6 +49,15 @@ class NoteController extends Controller
             ], 422);
         }
 
+        // Seules les matières au programme de l'année et du niveau de l'inscription peuvent recevoir une note
+        $parcours = EtudiantParcours::findOrFail($request->etudiant_parcours_id);
+        $horsProgramme = $this->horsProgramme($parcours, collect($request->notes)->pluck('id_matiere'));
+        if ($horsProgramme->isNotEmpty()) {
+            return response()->json([
+                'message' => 'Hors du programme de cette année pour ce niveau : ' . $horsProgramme->implode(', ') . '.',
+            ], 422);
+        }
+
         try {
             DB::beginTransaction();
 
@@ -108,6 +117,13 @@ class NoteController extends Controller
             return response()->json([
                 'error' => 'Données invalides',
                 'messages' => $validator->errors()
+            ], 422);
+        }
+
+        $horsProgramme = $this->horsProgramme(EtudiantParcours::findOrFail($request->id_etudiant_parcours), collect([$request->id_matiere]));
+        if ($horsProgramme->isNotEmpty()) {
+            return response()->json([
+                'message' => "{$horsProgramme->first()} n'est pas au programme de cette année pour ce niveau.",
             ], 422);
         }
 
@@ -186,42 +202,33 @@ class NoteController extends Controller
     }
 
     /**
-     * Calculer la moyenne d'un étudiant
+     * Moyenne générale d'une inscription : même calcul que le relevé (coefficients du programme de l'année)
      */
-    public function calculateMoyenne($etudiantParcoursId)
+    public function calculateMoyenne($etudiantParcoursId, ReleveService $releves)
     {
-        try {
-            $notes = Note::where('id_etudiant_parcours', $etudiantParcoursId)
-                        ->with('matiere')
-                        ->whereNotNull('note')
-                        ->get();
+        $general = $releves->pour(EtudiantParcours::findOrFail($etudiantParcoursId))['general'];
 
-            if ($notes->isEmpty()) {
-                return response()->json([
-                    'moyenne' => null,
-                    'message' => 'Aucune note disponible'
-                ], 200);
-            }
-
-            $totalNotes = 0;
-            $totalCoefficients = 0;
-
-            foreach ($notes as $note) {
-                $coefficient = $note->matiere->coefficient ?? 1;
-                $totalNotes += $note->note * $coefficient;
-                $totalCoefficients += $coefficient;
-            }
-
-            $moyenne = $totalCoefficients > 0 ? $totalNotes / $totalCoefficients : 0;
-
+        if ($general['notes_saisies'] === 0) {
             return response()->json([
-                'moyenne' => round($moyenne, 2),
-                'total_notes' => $notes->count(),
-                'success' => true
+                'moyenne' => null,
+                'message' => 'Aucune note disponible'
             ], 200);
-
-        } catch (\Exception $e) {
-            return $this->serverError('Erreur lors du calcul de la moyenne', $e);
         }
+
+        return response()->json([
+            'moyenne' => $general['moyenne'],
+            'total_notes' => $general['notes_saisies'],
+            'success' => true
+        ], 200);
+    }
+
+    /** Noms des matières demandées qui ne sont pas au programme de l'année et du niveau de l'inscription */
+    private function horsProgramme(EtudiantParcours $parcours, $idsMatieres)
+    {
+        $autorisees = Matiere::auProgramme($parcours->id_annee_aca)
+            ->where('matieres.id_niveau', $parcours->id_niveau)
+            ->pluck('matieres.id');
+
+        return Matiere::whereIn('id', $idsMatieres->diff($autorisees)->unique()->values())->pluck('matiere');
     }
 }

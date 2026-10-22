@@ -10,6 +10,7 @@ use App\Models\Etudiant;
 use App\Models\Info;
 use App\Models\EtudiantParcours;
 use App\Models\Matiere;
+use App\Models\ProgrammeMatiere;
 use App\Models\Niveau;
 use App\Models\Note;
 use App\Models\PublicationNote;
@@ -57,10 +58,16 @@ class DemoSeeder extends Seeder
             ['Écriture sainte', 'ECR', 'L2', 4, $s1], ['Patrologie', 'PATR', 'L2', 3, $s2],
             ['Théologie morale', 'MOR', 'L3', 4, $s1], ['Droit canonique', 'DCAN', 'L3', 3, $s2],
         ] as [$nom, $code, $niveau, $coef, $semestre]) {
-            $matieres->push(Matiere::firstOrCreate(['code_matiere' => $code], [
+            $matiere = Matiere::firstOrCreate(['code_matiere' => $code], [
                 'matiere' => $nom, 'heures' => 30, 'id_niveau' => $niveaux[$niveau]->id,
                 'coefficient' => (string) $coef, 'id_semestre' => $semestre->id,
-            ]));
+            ]);
+            // Au programme de l'année de démonstration
+            ProgrammeMatiere::firstOrCreate(
+                ['id_annee_aca' => $annee->id, 'id_matiere' => $matiere->id],
+                ['coefficient' => $coef, 'heures' => 30]
+            );
+            $matieres->push($matiere);
         }
 
         foreach (['Père Jean Rakoto', 'Père Paul Randria', 'Sœur Marie Rasoa'] as $i => $nom) {

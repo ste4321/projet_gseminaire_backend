@@ -11,6 +11,8 @@ use App\Models\PublicationNote;
  * Relevé de notes d'une inscription (un étudiant, une année, un niveau).
  * Source unique des calculs : utilisé par l'espace étudiant et par l'administration (bulletin PDF).
  *
+ * Matières et coefficients : ceux du programme de l'année de l'inscription (ProgrammeMatiere).
+ *
  * Moyenne = Σ(note × coefficient) / Σ(coefficients des matières notées).
  * Une note de 0 compte ; une matière sans note n'entre pas dans la moyenne.
  *
@@ -29,10 +31,12 @@ class ReleveService
     {
         $parcours->loadMissing(['etudiant', 'niveau', 'annee_academique']);
 
-        $matieres = Matiere::with('semestre')
-            ->where('id_niveau', $parcours->id_niveau)
-            ->orderBy('id_semestre')
-            ->orderBy('matiere')
+        // Programme de l'année de l'inscription : une matière ajoutée ou retirée une autre année ne change pas ce relevé
+        $matieres = Matiere::auProgramme($parcours->id_annee_aca)
+            ->with('semestre')
+            ->where('matieres.id_niveau', $parcours->id_niveau)
+            ->orderBy('matieres.id_semestre')
+            ->orderBy('matieres.matiere')
             ->get();
 
         $notes = Note::where('id_etudiant_parcours', $parcours->id)

@@ -71,7 +71,12 @@ class DashboardController extends Controller
             : 0;
         $notesAttendues = $annee
             ? (int) DB::table('etudiant_parcours')
-                ->join('matieres', 'matieres.id_niveau', '=', 'etudiant_parcours.id_niveau')
+                // Une note attendue par inscription et par matière au programme de l'année de son niveau
+                ->join('programme_matieres', 'programme_matieres.id_annee_aca', '=', 'etudiant_parcours.id_annee_aca')
+                ->join('matieres', function ($join) {
+                    $join->on('matieres.id', '=', 'programme_matieres.id_matiere')
+                        ->on('matieres.id_niveau', '=', 'etudiant_parcours.id_niveau');
+                })
                 ->where('etudiant_parcours.id_annee_aca', $annee->id)
                 ->count()
             : 0;
@@ -118,11 +123,12 @@ class DashboardController extends Controller
             if ($parcoursIds->isEmpty()) {
                 continue;
             }
-            $matieres = Matiere::with('semestre:id,semestre')
-                ->where('id_niveau', $niveau->id)
-                ->whereNotNull('id_semestre')
-                ->orderBy('id_semestre')
-                ->get(['id', 'id_semestre'])
+            $matieres = Matiere::auProgramme($anneeId)
+                ->with('semestre:id,semestre')
+                ->where('matieres.id_niveau', $niveau->id)
+                ->whereNotNull('matieres.id_semestre')
+                ->orderBy('matieres.id_semestre')
+                ->get()
                 ->groupBy('id_semestre');
 
             foreach ($matieres as $idSemestre => $liste) {
