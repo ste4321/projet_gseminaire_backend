@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AnneeAca;
 use App\Models\Annonce;
 use App\Models\EtudiantParcours;
 use Illuminate\Http\Request;
@@ -36,6 +37,15 @@ class AnnonceController extends Controller
     {
         $validated = $this->validated($request);
 
+        // Année non précisée : l'année en cours, celle des étudiants actuellement inscrits
+        if (empty($validated['id_annee_aca'])) {
+            $annee = AnneeAca::courante();
+            if (!$annee) {
+                return response()->json(['message' => "Aucune année académique n'est encore enregistrée."], 422);
+            }
+            $validated['id_annee_aca'] = $annee->id;
+        }
+
         // Gestion du fichier joint
         if ($request->hasFile('fichier')) {
             $path = $request->file('fichier')->store('annonces', 'public');
@@ -59,16 +69,19 @@ class AnnonceController extends Controller
         $annonce = Annonce::findOrFail($id);
 
         $validated = $this->validated($request);
+        // Année non précisée : l'annonce garde la sienne
+        if (empty($validated['id_annee_aca'])) {
+            unset($validated['id_annee_aca']);
+        }
 
+        // Nouveau fichier : remplace l'ancien. Case « retirer le fichier » : l'annonce n'a plus de pièce jointe
         if ($request->hasFile('fichier')) {
-            // Optionnel : supprimer l'ancien fichier
-            if ($annonce->fichier && str_starts_with($annonce->fichier, asset('storage/'))) {
-                $relativePath = str_replace(asset('storage/'), '', $annonce->fichier);
-                Storage::disk('public')->delete($relativePath);
-            }
-
+            $this->supprimerFichier($annonce);
             $path = $request->file('fichier')->store('annonces', 'public');
             $validated['fichier'] = asset('storage/' . $path);
+        } elseif ($request->boolean('supprimer_fichier')) {
+            $this->supprimerFichier($annonce);
+            $validated['fichier'] = null;
         }
 
         $annonce->update($validated);
@@ -80,14 +93,17 @@ class AnnonceController extends Controller
     {
         $annonce = Annonce::findOrFail($id);
 
-        // Supprimer le fichier s’il existe
-        if ($annonce->fichier && str_starts_with($annonce->fichier, asset('storage/'))) {
-            $relativePath = str_replace(asset('storage/'), '', $annonce->fichier);
-            Storage::disk('public')->delete($relativePath);
-        }
-
+        $this->supprimerFichier($annonce);
         $annonce->delete();
         return response()->json(['message' => 'Annonce supprimée avec succès.']);
+    }
+
+    /** Supprime du disque le fichier joint (s'il est stocké par l'application) */
+    private function supprimerFichier(Annonce $annonce): void
+    {
+        if ($annonce->fichier && str_starts_with($annonce->fichier, asset('storage/'))) {
+            Storage::disk('public')->delete(str_replace(asset('storage/'), '', $annonce->fichier));
+        }
     }
 
     private function validated(Request $request): array
@@ -96,9 +112,11 @@ class AnnonceController extends Controller
             'titre'        => ['required', 'string', 'max:255'],
             'description'  => ['required', 'string', 'max:50000'],
             'fichier'      => ['nullable', 'file', 'mimes:zip,doc,docx,pdf,xlsx,jpg,jpeg,png', 'max:10240'],
-            'id_annee_aca' => ['required', 'exists:annee_aca,id'],
+            'id_annee_aca' => ['nullable', 'exists:annee_aca,id'], // vide = année en cours (ajout) / inchangée (modification)
             'id_niveau'    => ['nullable', 'exists:niveaux,id'], // vide = tous les niveaux
+            'supprimer_fichier' => ['nullable', 'boolean'],
         ], [
+            'titre.required'       => "Le titre de l'annonce est obligatoire.",
             'description.required' => "Le contenu de l'annonce est obligatoire.",
             'fichier.mimes'        => 'Formats acceptés : PDF, Word, Excel, ZIP, JPG, PNG.',
             'fichier.max'          => 'Le fichier ne doit pas dépasser 10 Mo.',

@@ -22,6 +22,16 @@ class AnneeAca extends Model
         });
     }
 
+    /**
+     * Année en cours : la plus récente qui a des étudiants inscrits.
+     * Une année créée à l'avance (encore sans inscrits) n'est pas retenue ; sans aucun inscrit, la plus récente.
+     */
+    public static function courante(): ?self
+    {
+        return static::whereHas('parcours')->orderByDesc('id')->first()
+            ?? static::orderByDesc('id')->first();
+    }
+
     public function parcours()
     {
         return $this->hasMany(EtudiantParcours::class, 'id_annee_aca');
