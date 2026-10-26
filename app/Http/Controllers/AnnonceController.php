@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\AnnonceMiseAJour;
 use App\Models\AnneeAca;
 use App\Models\Annonce;
 use App\Models\EtudiantParcours;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 class AnnonceController extends Controller
@@ -15,7 +17,7 @@ class AnnonceController extends Controller
     {
         $query = Annonce::with(['niveau', 'anneeAca'])->orderByDesc('created_at');
 
-        // Étudiant : uniquement les annonces de son année et de son niveau (ou destinées à tous les niveaux)
+        // Étudiant : uniquement les annonces qui lui sont destinées, de son année et de son niveau (ou de tous les niveaux)
         if ($request->user()->role === 'etudiant') {
             $parcours = EtudiantParcours::where('id_etudiant', $request->user()->etudiants?->id)
                 ->orderByDesc('id_annee_aca')
@@ -25,8 +27,14 @@ class AnnonceController extends Controller
                 return response()->json([]);
             }
 
-            $query->where('id_annee_aca', $parcours->id_annee_aca)
+            $query->whereIn('destinataires', [Annonce::ETUDIANTS, Annonce::TOUS])
+                ->where('id_annee_aca', $parcours->id_annee_aca)
                 ->where(fn ($q) => $q->whereNull('id_niveau')->orWhere('id_niveau', $parcours->id_niveau));
+        }
+
+        // Enseignant : les annonces destinées aux enseignants ou à tout le monde
+        if ($request->user()->role === 'prof') {
+            $query->whereIn('destinataires', [Annonce::ENSEIGNANTS, Annonce::TOUS]);
         }
 
         return response()->json($query->get());
@@ -53,6 +61,7 @@ class AnnonceController extends Controller
         }
 
         $annonce = Annonce::create($validated);
+        $this->diffuser(AnnonceMiseAJour::CREEE, $annonce, $annonce->idsUtilisateursConcernes());
         return response()->json($annonce, 201);
     }
 
@@ -84,7 +93,10 @@ class AnnonceController extends Controller
             $validated['fichier'] = null;
         }
 
+        // Destinataires d'avant et d'après : ceux qui ne sont plus concernés voient aussi l'annonce disparaître
+        $avant = $annonce->idsUtilisateursConcernes();
         $annonce->update($validated);
+        $this->diffuser(AnnonceMiseAJour::MODIFIEE, $annonce, array_merge($avant, $annonce->idsUtilisateursConcernes()));
         return response()->json($annonce);
     }
 
@@ -93,9 +105,32 @@ class AnnonceController extends Controller
     {
         $annonce = Annonce::findOrFail($id);
 
+        $destinataires = $annonce->idsUtilisateursConcernes(); // avant la suppression
         $this->supprimerFichier($annonce);
         $annonce->delete();
+        $this->diffuser(AnnonceMiseAJour::SUPPRIMEE, $annonce, $destinataires);
         return response()->json(['message' => 'Annonce supprimée avec succès.']);
+    }
+
+    /**
+     * Prévient en direct les destinataires (publication, modification, suppression). Si le serveur
+     * WebSocket est arrêté, l'opération est quand même faite : ils la verront à leur prochain chargement.
+     */
+    private function diffuser(string $action, Annonce $annonce, array $idsUtilisateurs): void
+    {
+        $idsUtilisateurs = array_values(array_unique($idsUtilisateurs));
+        if (!$idsUtilisateurs) {
+            return;
+        }
+        try {
+            broadcast(new AnnonceMiseAJour($action, $annonce, $idsUtilisateurs));
+        } catch (\Throwable $e) {
+            Log::warning('Diffusion en direct de l\'annonce impossible (serveur Reverb arrêté ?)', [
+                'annonce_id' => $annonce->id,
+                'action'     => $action,
+                'error'      => $e->getMessage(),
+            ]);
+        }
     }
 
     /** Supprime du disque le fichier joint (s'il est stocké par l'application) */
@@ -113,14 +148,22 @@ class AnnonceController extends Controller
             'description'  => ['required', 'string', 'max:50000'],
             'fichier'      => ['nullable', 'file', 'mimes:zip,doc,docx,pdf,xlsx,jpg,jpeg,png', 'max:10240'],
             'id_annee_aca' => ['nullable', 'exists:annee_aca,id'], // vide = année en cours (ajout) / inchangée (modification)
-            'id_niveau'    => ['nullable', 'exists:niveaux,id'], // vide = tous les niveaux
+            'destinataires' => ['nullable', 'in:' . implode(',', Annonce::DESTINATAIRES)], // vide = étudiants
+            'id_niveau'    => ['nullable', 'exists:niveaux,id'], // vide = tous les niveaux (étudiants uniquement)
             'supprimer_fichier' => ['nullable', 'boolean'],
         ], [
             'titre.required'       => "Le titre de l'annonce est obligatoire.",
             'description.required' => "Le contenu de l'annonce est obligatoire.",
             'fichier.mimes'        => 'Formats acceptés : PDF, Word, Excel, ZIP, JPG, PNG.',
             'fichier.max'          => 'Le fichier ne doit pas dépasser 10 Mo.',
+            'destinataires.in'     => 'Destinataires inconnus.',
         ]);
+
+        // Le niveau ne concerne que les annonces réservées aux étudiants
+        $validated['destinataires'] = $validated['destinataires'] ?? Annonce::ETUDIANTS;
+        if ($validated['destinataires'] !== Annonce::ETUDIANTS) {
+            $validated['id_niveau'] = null;
+        }
 
         // L'expéditeur est déterminé par le serveur (non falsifiable depuis le navigateur)
         $user = $request->user();

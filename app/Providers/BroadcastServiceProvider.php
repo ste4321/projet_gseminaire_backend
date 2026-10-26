@@ -12,7 +12,9 @@ class BroadcastServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        Broadcast::routes();
+        // POST /api/broadcasting/auth : autorise l'abonnement aux canaux privés avec le jeton Sanctum
+        // (sous /api pour profiter de la configuration CORS de l'API)
+        Broadcast::routes(['prefix' => 'api', 'middleware' => ['auth:sanctum']]);
 
         require base_path('routes/channels.php');
     }

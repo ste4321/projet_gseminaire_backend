@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\Broadcast;
 |
 */
 
+// Canal privé de chaque utilisateur : notifications en direct (ex. annonces, voir App\Events\AnnonceMiseAJour)
 Broadcast::channel('App.Models.User.{id}', function ($user, $id) {
     return (int) $user->id === (int) $id;
 });

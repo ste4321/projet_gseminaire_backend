@@ -101,7 +101,7 @@ class DashboardController extends Controller
             'annonces_recentes' => Annonce::with('niveau:id,niveau')
                 ->latest()
                 ->limit(4)
-                ->get(['id', 'titre', 'description', 'expediteur', 'created_at', 'id_niveau']),
+                ->get(['id', 'titre', 'description', 'expediteur', 'created_at', 'destinataires', 'id_niveau']),
 
             // Compatibilité avec l'ancien format
             'total_etudiants' => Etudiant::count(),

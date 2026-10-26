@@ -80,8 +80,34 @@ php artisan route:cache
 php artisan view:cache
 ```
 
-### 8. Reverb (actualités en direct) et Nginx
+### 8. Reverb (annonces et actualités en direct) et Nginx
 Service Supervisor `gstf-reverb` et bloc Nginx `wss` : voir **`docs/temps-reel.md`**.
+Reverb doit tourner en permanence : sans lui, les annonces n'arrivent plus en direct
+(l'application se rabat sur une actualisation toutes les 30 s).
+
+### 8 bis. Performances : OPcache et cache des fichiers publics
+**OPcache** (le code PHP compilé est gardé en mémoire au lieu d'être relu à chaque requête) :
+mesuré sur ce projet, chaque requête de l'API passe d'environ 300 ms à 100 ms.
+Dans le `php.ini` de PHP-FPM (`/etc/php/8.2/fpm/php.ini`) :
+```ini
+opcache.enable=1
+opcache.memory_consumption=128
+opcache.max_accelerated_files=20000
+opcache.validate_timestamps=0   ; code relu seulement au redémarrage de PHP-FPM
+```
+Avec `validate_timestamps=0`, ajouter `sudo systemctl reload php8.2-fpm` à chaque déploiement.
+
+**Images et pièces jointes** (`/storage`) : chaque fichier envoyé reçoit un nom unique (un fichier
+remplacé change de nom), on peut donc laisser le navigateur les garder longtemps. Dans le bloc
+`server` Nginx de l'API :
+```nginx
+location /storage/ {
+    expires 30d;
+    add_header Cache-Control "public, immutable";
+    try_files $uri =404;
+}
+```
+L'emploi du temps et les pièces jointes ne sont alors plus retéléchargés à chaque visite.
 
 ### 9. Applications React
 - **Gestion** : `.env.production` contient déjà `REACT_APP_API_URL=https://api.gstf-faliarivo.ovh/api`.
@@ -112,6 +138,7 @@ composer install --no-dev --optimize-autoloader
 php artisan migrate --force
 php artisan storage:link            # sans effet s'il existe déjà ; à garder par sécurité
 php artisan config:cache && php artisan route:cache && php artisan view:cache
+sudo systemctl reload php8.2-fpm    # OPcache : prise en compte du nouveau code
 sudo supervisorctl restart gstf-reverb
 php artisan up
 ```
