@@ -17,9 +17,14 @@ class EnseignantController extends Controller
     {
     }
 
-    public function index()
+    public function index(Request $request)
     {
-        return Enseignant::orderBy('id')->get();
+        // Annuaire pour les étudiants et les enseignants : les coordonnées, sans les données internes (compte lié, dates)
+        $colonnes = $request->user()->role === 'admin'
+            ? ['*']
+            : ['id', 'nom_prenom', 'email', 'telephone', 'adresse'];
+
+        return Enseignant::orderBy('id')->get($colonnes);
     }
 
     public function store(Request $request)
