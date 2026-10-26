@@ -2,16 +2,20 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\NotesPubliees;
 use App\Models\EtudiantParcours;
 use App\Models\Matiere;
 use App\Models\Note;
 use App\Models\PublicationNote;
+use App\Models\Semestre;
 use App\Services\ConfirmationService;
+use App\Services\DiffusionService;
 use Illuminate\Http\Request;
 
 /**
  * Publication des notes par semestre, pour une année académique et un niveau.
  * Tant qu'un semestre n'est pas publié, ses notes ne sont pas envoyées aux étudiants.
+ * Publication et retrait sont signalés en direct aux étudiants concernés (événement NotesPubliees).
  */
 class PublicationNoteController extends Controller
 {
@@ -65,6 +69,9 @@ class PublicationNoteController extends Controller
         $confirmations->exiger($request->user(), 'publier_notes', $request->input('code_confirmation'));
 
         $publication = PublicationNote::firstOrCreate($cible, ['publie_par' => $request->user()->id]);
+        if ($publication->wasRecentlyCreated) {
+            $this->diffuser(NotesPubliees::PUBLIEES, $cible);
+        }
 
         return response()->json([
             'message' => 'Notes publiées : les étudiants peuvent maintenant les consulter.',
@@ -75,9 +82,25 @@ class PublicationNoteController extends Controller
     /** DELETE /api/notes/publications : retire la publication (les notes redeviennent invisibles pour les étudiants) */
     public function destroy(Request $request)
     {
-        PublicationNote::where($this->cible($request))->delete();
+        $cible = $this->cible($request);
+        if (PublicationNote::where($cible)->delete()) {
+            $this->diffuser(NotesPubliees::RETIREES, $cible);
+        }
 
         return response()->json(['message' => 'Publication retirée : les étudiants ne voient plus ces notes.']);
+    }
+
+    /** Prévient les étudiants de l'année et du niveau : leur relevé se recharge */
+    private function diffuser(string $action, array $cible): void
+    {
+        DiffusionService::envoyer(
+            new NotesPubliees(
+                $action,
+                Semestre::find($cible['id_semestre'])?->semestre,
+                DiffusionService::etudiantsInscrits($cible['id_annee_aca'], $cible['id_niveau']),
+            ),
+            $cible + ['action' => $action]
+        );
     }
 
     private function cible(Request $request): array
