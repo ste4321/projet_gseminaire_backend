@@ -34,7 +34,7 @@ class EtudiantParcoursController extends Controller
         $requete = EtudiantParcours::query()
             ->select(['id', 'id_etudiant', 'id_annee_aca', 'id_niveau', 'statut'])
             ->with([
-                'etudiant:id,matricule,nom_prenom,diocese,email,telephone,id_user_cession',
+                'etudiant:id,matricule,nom_prenom,diocese,email,telephone,id_user_cession,date_sortie,motif_sortie',
                 'annee_academique:id,annee_aca',
                 'niveau:id,niveau',
             ])

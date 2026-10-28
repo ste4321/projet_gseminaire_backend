@@ -63,6 +63,9 @@ class UserCessionController extends Controller
         $user = User::findOrFail($id);
         $user->is_verified = !$user->is_verified;
         $user->save();
+        if (!$user->is_verified) {
+            $user->tokens()->delete(); // ses sessions ouvertes sont fermées
+        }
 
         return response()->json([
             'is_verified' => (bool) $user->is_verified,
@@ -84,6 +87,9 @@ class UserCessionController extends Controller
         $isVerified = $request->boolean('is_verified');
 
         $updatedCount = User::whereIn('id', $userIds)->update(['is_verified' => $isVerified]);
+        if (!$isVerified) {
+            \Laravel\Sanctum\PersonalAccessToken::where('tokenable_type', User::class)->whereIn('tokenable_id', $userIds)->delete();
+        }
 
         return response()->json([
             'success'       => true,
