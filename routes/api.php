@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\CalendrierController;
 use App\Http\Controllers\ConfirmationController;
 use App\Http\Controllers\ConsultationController;
 use App\Http\Controllers\ContactController;
@@ -44,6 +45,7 @@ Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10
 // Site vitrine
 Route::post('/postContact', [ContactController::class, 'store'])->middleware('throttle:5,1');
 Route::get('/infos', [InfoController::class, 'index']);
+Route::get('/calendrier', [CalendrierController::class, 'public']);
 
 // ─── 2. Utilisateur connecté ──────────────────────────────────────────────
 Route::middleware(['auth:sanctum', 'consultation.lecture'])->group(function () {
@@ -111,6 +113,15 @@ Route::middleware(['auth:sanctum', 'consultation.lecture'])->group(function () {
         Route::post('/infos', [InfoController::class, 'store']);
         Route::put('/infos/{id}', [InfoController::class, 'update']);
         Route::delete('/infos/{id}', [InfoController::class, 'destroy']);
+
+        // Calendrier académique (site vitrine)
+        Route::get('/calendriers', [CalendrierController::class, 'index']);
+        Route::post('/calendriers', [CalendrierController::class, 'store']);
+        Route::put('/calendriers/{id}', [CalendrierController::class, 'update'])->whereNumber('id');
+        Route::delete('/calendriers/{id}', [CalendrierController::class, 'destroy'])->whereNumber('id');
+        Route::post('/calendriers/{id}/evenements', [CalendrierController::class, 'storeEvenement'])->whereNumber('id');
+        Route::put('/calendrier-evenements/{id}', [CalendrierController::class, 'updateEvenement'])->whereNumber('id');
+        Route::delete('/calendrier-evenements/{id}', [CalendrierController::class, 'destroyEvenement'])->whereNumber('id');
 
         // Référentiels
         Route::post('/annee_aca', [AnneeAcaController::class, 'store']);
