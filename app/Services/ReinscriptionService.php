@@ -104,9 +104,11 @@ class ReinscriptionService
                         $bilan['deja_inscrits']++;
                         continue;
                     }
-                    $niveau = $d['niveau_cible'] ?? ($d['decision'] === self::PASSAGE
+                    // Niveau imposé par la décision (le niveau éventuellement envoyé est ignoré) :
+                    // passage = niveau suivant, redoublement = même niveau
+                    $niveau = $d['decision'] === self::PASSAGE
                         ? Niveau::find($p->id_niveau)?->suivant()?->id
-                        : $p->id_niveau);
+                        : $p->id_niveau;
                     if (!$niveau) {
                         $bilan[self::IGNORER]++; // pas de niveau suivant : à traiter comme diplômé
                         continue;

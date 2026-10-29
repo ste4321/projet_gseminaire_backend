@@ -66,8 +66,14 @@ class ReinscriptionController extends Controller
         $source = AnneeAca::findOrFail($ids['source']);
         $cible = AnneeAca::findOrFail($ids['cible']);
 
-        // « 2026-2027 » se compare comme du texte : l'année d'arrivée doit suivre l'année de départ
-        abort_if(strcmp($cible->annee_aca, $source->annee_aca) <= 0, 422, "L'année d'arrivée doit suivre l'année de départ.");
+        // Pas de saut d'année : de 2025-2026, on ne passe qu'en 2026-2027
+        $debut = (int) explode('-', $source->annee_aca)[0];
+        $suivante = ($debut + 1) . '-' . ($debut + 2);
+        abort_if(
+            $cible->annee_aca !== $suivante,
+            422,
+            "Les étudiants de {$source->annee_aca} ne peuvent être réinscrits qu'en {$suivante}, l'année qui suit."
+        );
 
         return [$source, $cible];
     }

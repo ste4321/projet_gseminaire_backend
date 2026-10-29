@@ -83,8 +83,9 @@ class ReinscriptionTest extends TestCase
         $this->actingAs($this->admin(), 'sanctum');
 
         $decisions = [
-            ['parcours_id' => $pAdmis->id, 'decision' => 'passage'],
-            ['parcours_id' => $pRattrapage->id, 'decision' => 'redoublement'],
+            // Niveaux incohérents envoyés exprès : le serveur impose L1 → L2 (passage) et L1 → L1 (redoublement)
+            ['parcours_id' => $pAdmis->id, 'decision' => 'passage', 'niveau_cible' => $this->niveaux['L3']->id],
+            ['parcours_id' => $pRattrapage->id, 'decision' => 'redoublement', 'niveau_cible' => $this->niveaux['L2']->id],
             ['parcours_id' => $pExclu->id, 'decision' => 'exclu', 'motif' => 'Conseil de discipline'],
             ['parcours_id' => $pDiplome->id, 'decision' => 'diplome'],
         ];
@@ -130,6 +131,17 @@ class ReinscriptionTest extends TestCase
 
         $this->getJson("/api/reinscriptions?source={$this->cible->id}&cible={$this->source->id}")->assertStatus(422);
         $this->getJson("/api/reinscriptions?source={$this->source->id}&cible={$this->source->id}")->assertStatus(422);
+
+        // Pas de saut d'année : 2025-2026 → 2027-2028 refusé, à la lecture comme à l'enregistrement
+        $plusTard = AnneeAca::create(['annee_aca' => '2027-2028']);
+        $this->getJson("/api/reinscriptions?source={$this->source->id}&cible={$plusTard->id}")
+            ->assertStatus(422)
+            ->assertJsonPath('message', "Les étudiants de 2025-2026 ne peuvent être réinscrits qu'en 2026-2027, l'année qui suit.");
+        $this->postJson('/api/reinscriptions', [
+            'source' => $this->source->id, 'cible' => $plusTard->id,
+            'decisions' => [['parcours_id' => 1, 'decision' => 'passage']],
+        ])->assertStatus(422);
+        $this->getJson("/api/reinscriptions?source={$this->source->id}&cible={$this->cible->id}")->assertOk();
     }
 
     public function test_sortie_en_cours_d_annee_puis_retour(): void
