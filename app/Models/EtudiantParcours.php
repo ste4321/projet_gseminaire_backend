@@ -11,6 +11,19 @@ class EtudiantParcours extends Model
 
     protected $table = 'etudiant_parcours';
 
+    // Issue de l'année (statut de l'inscription)
+    public const INSCRIT = 'inscrit';       // année en cours
+    public const ADMIS = 'admis';           // passé au niveau suivant
+    public const REDOUBLANT = 'redoublant'; // refait le même niveau l'année suivante
+    public const DIPLOME = 'diplome';       // cycle terminé
+    public const ABANDON = 'abandon';
+    public const TRANSFERE = 'transfere';
+    public const EXCLU = 'exclu';
+
+    public const STATUTS = [self::INSCRIT, self::ADMIS, self::REDOUBLANT, self::DIPLOME, self::ABANDON, self::TRANSFERE, self::EXCLU];
+    /** Départs : l'étudiant quitte le séminaire, son compte est désactivé */
+    public const SORTIES = [self::ABANDON, self::TRANSFERE, self::EXCLU];
+
     protected $fillable = [
         'id_etudiant',
         'id_annee_aca',

@@ -2,7 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\EmploiDuTempsMisAJour;
+use App\Models\AnneeAca;
 use App\Models\Edt;
+use App\Services\DiffusionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 
@@ -13,6 +16,7 @@ use Illuminate\Support\Facades\Storage;
  * le lien public/storage : la commande `php artisan storage:link` est indispensable
  * sur chaque installation (sans elle, les images répondent 404).
  * La base ne garde que le chemin public : /storage/edt/<fichier>.
+ * Ajout, remplacement et suppression sont signalés en direct aux étudiants (EmploiDuTempsMisAJour).
  */
 class EmploiDuTempsController extends Controller
 {
@@ -44,6 +48,7 @@ class EmploiDuTempsController extends Controller
         $emploi->save();
 
         $this->supprimerFichier($ancienne);
+        $this->diffuser(EmploiDuTempsMisAJour::REMPLACE, $emploi);
 
         return response()->json(['image_url' => $emploi->image_url], 200);
     }
@@ -67,6 +72,7 @@ class EmploiDuTempsController extends Controller
             'semestre'   => $request->semestre,
             'updated_by' => $request->user()->email,
         ]);
+        $this->diffuser(EmploiDuTempsMisAJour::AJOUTE, $emploi);
 
         return response()->json($emploi, 201);
     }
@@ -76,8 +82,19 @@ class EmploiDuTempsController extends Controller
         $emploi = Edt::findOrFail($id);
         $this->supprimerFichier($emploi->image_url);
         $emploi->delete();
+        $this->diffuser(EmploiDuTempsMisAJour::SUPPRIME, $emploi);
 
         return response()->json(['message' => 'Image supprimée']);
+    }
+
+    /** Prévient les étudiants inscrits cette année : leur emploi du temps se met à jour */
+    private function diffuser(string $action, Edt $emploi): void
+    {
+        $annee = AnneeAca::courante();
+        DiffusionService::envoyer(
+            new EmploiDuTempsMisAJour($action, (int) $emploi->semestre, $annee ? DiffusionService::etudiantsInscrits($annee->id) : []),
+            ['edt_id' => $emploi->id, 'action' => $action]
+        );
     }
 
     /** Stocke l'image dans storage/app/public/edt et renvoie son chemin public « /storage/edt/… » */

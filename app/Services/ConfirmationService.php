@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Codes de confirmation pour les actions sensibles (publier les notes, publier une actualité).
+ * Codes de confirmation pour les actions sensibles (publier les notes, publier une actualité, réinscrire les étudiants).
  *
  * Le serveur émet un code court, l'interface l'affiche et l'utilisateur doit le recopier :
  * une publication ne part jamais sur un simple clic. Le code est lié à l'utilisateur
@@ -16,7 +16,7 @@ use Illuminate\Validation\ValidationException;
  */
 class ConfirmationService
 {
-    public const ACTIONS = ['publier_notes', 'publier_actualite'];
+    public const ACTIONS = ['publier_notes', 'publier_actualite', 'reinscrire'];
     public const CODE_TTL = 300;
     private const LONGUEUR = 6;
     private const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // sans 0/O, 1/I/L

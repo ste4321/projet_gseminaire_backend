@@ -15,7 +15,17 @@ class Etudiant extends Model
         'telephone',
         'diocese',
         'matricule',
+        'date_sortie',
+        'motif_sortie',
     ];
+
+    protected $casts = ['date_sortie' => 'date:Y-m-d'];
+
+    /** A quitté le séminaire (diplômé, abandon, transfert, exclusion) */
+    public function estSorti(): bool
+    {
+        return $this->date_sortie !== null;
+    }
     public function userCession()
     {
         return $this->belongsTo(User::class, 'id_user_cession');

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\DiffusionService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -33,24 +34,12 @@ class Annonce extends Model
     /** Comptes utilisateurs actifs concernés par l'annonce (ceux à prévenir à sa publication) */
     public function idsUtilisateursConcernes(): array
     {
-        $ids = collect();
-
-        if ($this->pourEtudiants()) {
-            $ids = $ids->merge(
-                Etudiant::query()
-                    ->whereNotNull('id_user_cession')
-                    ->whereHas('parcours', fn ($q) => $q
-                        ->where('id_annee_aca', $this->id_annee_aca)
-                        ->when($this->id_niveau, fn ($q) => $q->where('id_niveau', $this->id_niveau)))
-                    ->pluck('id_user_cession')
-            );
-        }
+        $ids = $this->pourEtudiants() ? DiffusionService::etudiantsInscrits($this->id_annee_aca, $this->id_niveau) : [];
 
         if ($this->pourEnseignants()) {
-            $ids = $ids->merge(Enseignant::whereNotNull('id_user_cession')->pluck('id_user_cession'));
+            $ids = array_merge($ids, DiffusionService::actifs(Enseignant::whereNotNull('id_user_cession')->pluck('id_user_cession')->all()));
         }
 
-        // Comptes désactivés : ils n'ont pas accès à leur espace, inutile de les prévenir
-        return User::whereIn('id', $ids->unique())->where('is_verified', true)->pluck('id')->all();
+        return array_values(array_unique($ids));
     }
 }

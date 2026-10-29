@@ -78,9 +78,16 @@ class EtudiantController extends Controller
         ], 201);
     }
 
+    /** GET /api/etudiants/{id} : dossier et inscriptions (la plus récente d'abord), avec le nombre de notes saisies */
     public function show($id)
     {
-        return Etudiant::with(['parcours.niveau', 'parcours.annee_academique'])->findOrFail($id);
+        return Etudiant::with([
+            'parcours' => fn ($q) => $q
+                ->withCount(['notes as notes_saisies' => fn ($n) => $n->whereNotNull('note')])
+                ->orderByDesc('id_annee_aca'),
+            'parcours.niveau',
+            'parcours.annee_academique',
+        ])->findOrFail($id);
     }
 
     public function update(Request $request, $id)

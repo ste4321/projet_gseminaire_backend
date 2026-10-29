@@ -6,8 +6,8 @@ use App\Events\AnnonceMiseAJour;
 use App\Models\AnneeAca;
 use App\Models\Annonce;
 use App\Models\EtudiantParcours;
+use App\Services\DiffusionService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 class AnnonceController extends Controller
@@ -118,19 +118,10 @@ class AnnonceController extends Controller
      */
     private function diffuser(string $action, Annonce $annonce, array $idsUtilisateurs): void
     {
-        $idsUtilisateurs = array_values(array_unique($idsUtilisateurs));
-        if (!$idsUtilisateurs) {
-            return;
-        }
-        try {
-            broadcast(new AnnonceMiseAJour($action, $annonce, $idsUtilisateurs));
-        } catch (\Throwable $e) {
-            Log::warning('Diffusion en direct de l\'annonce impossible (serveur Reverb arrêté ?)', [
-                'annonce_id' => $annonce->id,
-                'action'     => $action,
-                'error'      => $e->getMessage(),
-            ]);
-        }
+        DiffusionService::envoyer(
+            new AnnonceMiseAJour($action, $annonce, array_values(array_unique($idsUtilisateurs))),
+            ['annonce_id' => $annonce->id, 'action' => $action]
+        );
     }
 
     /** Supprime du disque le fichier joint (s'il est stocké par l'application) */

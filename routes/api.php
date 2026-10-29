@@ -22,6 +22,8 @@ use App\Http\Controllers\NoteImportController;
 use App\Http\Controllers\PasswordController;
 use App\Http\Controllers\ProgrammeController;
 use App\Http\Controllers\PublicationNoteController;
+use App\Http\Controllers\ReinscriptionController;
+use App\Http\Controllers\SortieEtudiantController;
 use App\Http\Controllers\EspaceEtudiantController;
 use App\Http\Controllers\UserCessionController;
 
@@ -90,6 +92,12 @@ Route::middleware(['auth:sanctum', 'consultation.lecture'])->group(function () {
         // Étudiants (import déclaré avant la ressource)
         Route::post('/etudiants/import', [EtudiantImportController::class, 'import']);
         Route::apiResource('etudiants', EtudiantController::class);
+        // Départ d'un étudiant (diplômé, abandon, transfert, exclusion) et annulation
+        Route::post('/etudiants/{id}/sortie', [SortieEtudiantController::class, 'store'])->whereNumber('id');
+        Route::delete('/etudiants/{id}/sortie', [SortieEtudiantController::class, 'destroy'])->whereNumber('id');
+        // Assistant de réinscription : passage à l'année suivante
+        Route::get('/reinscriptions', [ReinscriptionController::class, 'index']);
+        Route::post('/reinscriptions', [ReinscriptionController::class, 'store']);
         Route::get('/etudiant_parcours', [EtudiantParcoursController::class, 'index']);
 
         // Annonces
