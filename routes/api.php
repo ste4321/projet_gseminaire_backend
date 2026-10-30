@@ -127,6 +127,8 @@ Route::middleware(['auth:sanctum', 'consultation.lecture'])->group(function () {
 
         // Référentiels
         Route::post('/annee_aca', [AnneeAcaController::class, 'store']);
+        Route::put('/annee_aca/{id}', [AnneeAcaController::class, 'update'])->whereNumber('id');
+        Route::delete('/annee_aca/{id}', [AnneeAcaController::class, 'destroy'])->whereNumber('id');
         Route::apiResource('niveaux', NiveauController::class)->except('index');
         Route::apiResource('semestres', SemestreController::class)->except('index');
 

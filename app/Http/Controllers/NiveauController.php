@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AnneeAca;
 use App\Models\EtudiantParcours;
 use App\Models\Matiere;
 use App\Models\Niveau;
@@ -10,9 +11,15 @@ use Illuminate\Validation\Rule;
 
 class NiveauController extends Controller
 {
+    /** Niveaux, avec le nombre de matières et d'inscrits de l'année en cours */
     public function index()
     {
-        return Niveau::orderBy('niveau')->get();
+        $courante = AnneeAca::courante()?->id;
+
+        return Niveau::withCount([
+            'matieres',
+            'parcours as inscrits_count' => fn ($q) => $q->where('id_annee_aca', $courante),
+        ])->orderBy('niveau')->get();
     }
 
     public function store(Request $request)
