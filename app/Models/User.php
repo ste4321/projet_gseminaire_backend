@@ -31,7 +31,64 @@ class User extends Authenticatable
         'is_verified' => 'boolean',
         'must_change_password' => 'boolean',
         'password_changed_at' => 'datetime',
+        'derniere_connexion_at' => 'datetime',
+        'derniere_activite_at' => 'datetime',
+        'provisoire_depuis' => 'datetime',
     ];
+
+    protected static function booted(): void
+    {
+        // Âge du mot de passe provisoire : daté à chaque nouveau mot de passe provisoire (création,
+        // réinitialisation), effacé quand la personne choisit le sien
+        static::saving(function (User $user) {
+            if ($user->must_change_password && ($user->isDirty('must_change_password') || $user->isDirty('password') || !$user->provisoire_depuis)) {
+                $user->provisoire_depuis = now();
+            } elseif (!$user->must_change_password) {
+                $user->provisoire_depuis = null;
+            }
+        });
+    }
+
+    /** Signal de présence au-delà duquel un compte n'est plus « en ligne » (l'application l'envoie toutes les 45 s) */
+    public const PRESENCE_SECONDES = 120;
+
+    /** Connexion réussie de la personne elle-même ; ne modifie pas updated_at */
+    public function noterConnexion(): void
+    {
+        $this->timestamps = false;
+        $this->forceFill(['derniere_connexion_at' => now(), 'derniere_activite_at' => now()])->save();
+        $this->timestamps = true;
+    }
+
+    /** Application ouverte (signal de présence) ; écrit au plus une fois toutes les 20 s, sans modifier updated_at */
+    public function noterActivite(): void
+    {
+        if ($this->derniere_activite_at && $this->derniere_activite_at->gt(now()->subSeconds(20))) {
+            return;
+        }
+        $this->timestamps = false;
+        $this->forceFill(['derniere_activite_at' => now()])->save();
+        $this->timestamps = true;
+    }
+
+    /**
+     * Comptes en ligne : signal de présence récent et session ouverte (une déconnexion supprime la session,
+     * le statut tombe aussitôt). Les sessions de consultation par l'administration ne comptent pas.
+     */
+    public function scopeAvecPresence($query)
+    {
+        return $query->withExists(['tokens as session_ouverte' => fn ($q) => $q
+            ->where('name', 'auth_token')
+            ->where(fn ($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now())),
+        ]);
+    }
+
+    public function estEnLigne(): bool
+    {
+        return (bool) $this->session_ouverte
+            && $this->derniere_activite_at
+            && $this->derniere_activite_at->gt(now()->subSeconds(self::PRESENCE_SECONDES));
+    }
     public function hasLinkedProfile()
     {
         return $this->admin()->exists() || $this->enseignant()->exists() || $this->etudiants()->exists();

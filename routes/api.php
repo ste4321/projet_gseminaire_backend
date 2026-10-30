@@ -54,6 +54,8 @@ Route::middleware(['auth:sanctum', 'consultation.lecture'])->group(function () {
     // Fin de la consultation de l'espace d'une autre personne (voir ConsultationController)
     Route::post('/consultation/fin', [ConsultationController::class, 'fin']);
     Route::get('/me', [AuthController::class, 'me']);
+    // Signal de présence de l'application ouverte (statut « En ligne » des comptes)
+    Route::post('/presence', [AuthController::class, 'presence'])->middleware('throttle:10,1');
     Route::post('/refresh', [AuthController::class, 'refresh']);
     // Accessible avec un mot de passe provisoire (c'est justement pour le remplacer)
     Route::post('/password/change', [PasswordController::class, 'change'])->middleware('throttle:10,1');
@@ -163,9 +165,12 @@ Route::middleware(['auth:sanctum', 'consultation.lecture'])->group(function () {
         // Comptes utilisateurs (routes fixes avant {id})
         Route::get('/user-cessions', [UserCessionController::class, 'index']);
         Route::get('/user-cessions/stats', [UserCessionController::class, 'stats']);
+        Route::get('/user-cessions/presence', [UserCessionController::class, 'presence']);
         Route::patch('/user-cessions/bulk-toggle', [UserCessionController::class, 'bulkToggle']);
+        Route::post('/user-cessions/bulk-delete', [UserCessionController::class, 'bulkDestroy']);
         Route::patch('/user-cessions/{id}/toggle', [UserCessionController::class, 'toggle']);
         Route::post('/user-cessions/{id}/reset-password', [PasswordController::class, 'reset']);
+        Route::delete('/user-cessions/{id}', [UserCessionController::class, 'destroy'])->whereNumber('id');
 
         // Ouvrir l'espace d'un étudiant ou d'un enseignant, en lecture seule
         Route::post('/consultation/{userId}', [ConsultationController::class, 'demarrer'])

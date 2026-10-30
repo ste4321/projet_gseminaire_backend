@@ -16,7 +16,7 @@ use Illuminate\Validation\ValidationException;
  */
 class ConfirmationService
 {
-    public const ACTIONS = ['publier_notes', 'publier_actualite', 'reinscrire'];
+    public const ACTIONS = ['publier_notes', 'publier_actualite', 'reinscrire', 'supprimer_compte'];
     public const CODE_TTL = 300;
     private const LONGUEUR = 6;
     private const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789'; // sans 0/O, 1/I/L

@@ -2,8 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Admin;
+use App\Models\Enseignant;
+use App\Models\Etudiant;
 use App\Models\User;
+use App\Services\ConfirmationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 /**
@@ -20,12 +25,13 @@ class UserCessionController extends Controller
         ['role' => $role] = $request->validate(['role' => ['nullable', Rule::in(self::ROLES)]]) + ['role' => null];
 
         // Profils chargés en 3 requêtes groupées (au lieu d'une requête par utilisateur)
-        $users = User::select(['id', 'email', 'role', 'is_verified', 'must_change_password', 'created_at', 'updated_at'])
+        $users = User::select(['id', 'email', 'role', 'is_verified', 'must_change_password', 'provisoire_depuis', 'derniere_connexion_at', 'derniere_activite_at', 'created_at', 'updated_at'])
+            ->avecPresence()
             ->when($role, fn ($q) => $q->where('role', $role))
             ->with([
                 'admin:id,id_user_cession,nom_prenom,telephone',
                 'enseignant:id,id_user_cession,nom_prenom,telephone',
-                'etudiants:id,id_user_cession,nom_prenom,telephone',
+                'etudiants:id,id_user_cession,nom_prenom,telephone,matricule',
             ])
             ->orderByDesc('created_at')
             ->get();
@@ -45,8 +51,13 @@ class UserCessionController extends Controller
                 'role'                 => $u->role,
                 'is_verified'          => (bool) $u->is_verified,
                 'must_change_password' => (bool) $u->must_change_password,
+                'provisoire_depuis'    => $u->provisoire_depuis,
+                'derniere_connexion_at' => $u->derniere_connexion_at,
+                'derniere_activite_at' => $u->derniere_activite_at,
+                'en_ligne'             => $u->estEnLigne(),
                 'nom_prenom'           => $profil?->nom_prenom,
                 'telephone'            => $profil?->telephone,
+                'matricule'            => $u->role === 'etudiant' ? $profil?->matricule : null,
                 'created_at'           => $u->created_at,
                 'updated_at'           => $u->updated_at,
             ];
@@ -99,6 +110,94 @@ class UserCessionController extends Controller
             'updated_count' => $updatedCount,
             'is_verified'   => $isVerified,
         ]);
+    }
+
+    /**
+     * Suppression de comptes de connexion (ex. étudiant exclu), depuis la sélection de la page « Comptes et accès ».
+     * Exige le code de confirmation (action supprimer_compte), un seul pour toute la sélection. Seul l'accès disparaît :
+     * le dossier de l'étudiant ou de l'enseignant (notes, bulletins, parcours) est conservé, détaché du compte.
+     * (Les clés étrangères des profils sont en cascade : sans ce détachement, le dossier et les notes seraient effacés.)
+     * Un nouveau compte peut être recréé plus tard, par exemple par un nouvel import des étudiants.
+     */
+
+    /** DELETE /api/user-cessions/{id} */
+    public function destroy(Request $request, ConfirmationService $confirmations, $id)
+    {
+        return $this->supprimer($request, $confirmations, [User::findOrFail($id)->id]);
+    }
+
+    /** POST /api/user-cessions/bulk-delete { user_ids: [...], code_confirmation } */
+    public function bulkDestroy(Request $request, ConfirmationService $confirmations)
+    {
+        $validated = $request->validate([
+            'user_ids'   => ['required', 'array', 'min:1', 'max:500'],
+            'user_ids.*' => ['integer', 'exists:user_cession,id'],
+        ], [
+            'user_ids.required' => 'Aucun compte sélectionné.',
+        ]);
+
+        return $this->supprimer($request, $confirmations, array_values(array_unique($validated['user_ids'])));
+    }
+
+    private function supprimer(Request $request, ConfirmationService $confirmations, array $ids)
+    {
+        $moi = $request->user()->id;
+        if (in_array($moi, $ids, true)) {
+            return response()->json(['message' => 'Vous ne pouvez pas supprimer votre propre compte.'], 422);
+        }
+        $adminsRestants = User::where('role', 'admin')->where('is_verified', true)->whereNotIn('id', $ids)->exists();
+        if (!$adminsRestants && User::whereIn('id', $ids)->where('role', 'admin')->exists()) {
+            return response()->json(['message' => 'Impossible de supprimer le dernier administrateur actif.'], 422);
+        }
+        $confirmations->exiger($request->user(), 'supprimer_compte', $request->input('code_confirmation'));
+
+        $comptes = User::whereIn('id', $ids)->get();
+        $noms = DB::transaction(function () use ($comptes, $ids) {
+            $noms = Etudiant::whereIn('id_user_cession', $ids)->pluck('nom_prenom', 'id_user_cession')->all()
+                + Enseignant::whereIn('id_user_cession', $ids)->pluck('nom_prenom', 'id_user_cession')->all()
+                + Admin::whereIn('id_user_cession', $ids)->pluck('nom_prenom', 'id_user_cession')->all();
+
+            // Dossiers conservés, détachés des comptes
+            Etudiant::whereIn('id_user_cession', $ids)->update(['id_user_cession' => null]);
+            Enseignant::whereIn('id_user_cession', $ids)->update(['id_user_cession' => null]);
+
+            foreach ($comptes as $compte) {
+                $compte->tokens()->delete(); // sessions ouvertes fermées
+                $compte->delete(); // un profil administrateur (simple fiche) part avec le compte
+            }
+
+            return $noms;
+        });
+
+        $avecDossier = $comptes->contains(fn (User $u) => in_array($u->role, ['etudiant', 'prof'], true));
+        $conserve = $avecDossier ? ($comptes->count() > 1 ? ' Les dossiers (notes, bulletins, parcours) sont conservés.' : ' Son dossier (notes, bulletins, parcours) est conservé.') : '';
+        $message = $comptes->count() > 1
+            ? "{$comptes->count()} comptes supprimés.{$conserve}"
+            : 'Compte de ' . ($noms[$comptes->first()->id] ?? $comptes->first()->email) . " supprimé.{$conserve}";
+
+        return response()->json(['message' => $message, 'supprimes' => $comptes->pluck('id')]);
+    }
+
+    /**
+     * GET /api/user-cessions/presence?role=… : statut de présence seul, relu toutes les 30 s par la page
+     * « Comptes et accès » (bien plus léger que la liste complète)
+     */
+    public function presence(Request $request)
+    {
+        ['role' => $role] = $request->validate(['role' => ['nullable', Rule::in(self::ROLES)]]) + ['role' => null];
+
+        return response()->json(
+            User::select(['id', 'derniere_activite_at', 'derniere_connexion_at'])
+                ->avecPresence()
+                ->when($role, fn ($q) => $q->where('role', $role))
+                ->get()
+                ->map(fn (User $u) => [
+                    'id' => $u->id,
+                    'en_ligne' => $u->estEnLigne(),
+                    'derniere_activite_at' => $u->derniere_activite_at,
+                    'derniere_connexion_at' => $u->derniere_connexion_at,
+                ])
+        );
     }
 
     /**
