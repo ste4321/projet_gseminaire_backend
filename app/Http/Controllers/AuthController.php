@@ -103,7 +103,12 @@ class AuthController extends Controller
     public function logout(Request $request)
     {
         // Supprimer le token actuel
-        $request->user()->currentAccessToken()->delete();
+        $jeton = $request->user()->currentAccessToken();
+        $consultation = in_array('consultation', $jeton->abilities ?? [], true);
+        $jeton->delete();
+        if (!$consultation) {
+            $request->user()->diffuserPresence(false); // la page « Comptes et accès » le voit hors ligne aussitôt
+        }
 
         Log::info('Déconnexion', [
             'user_id' => $request->user()->id,

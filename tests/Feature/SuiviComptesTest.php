@@ -2,10 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Events\PresenceCompte;
 use App\Models\User;
 use App\Services\AccountService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
 class SuiviComptesTest extends TestCase
@@ -88,6 +90,49 @@ class SuiviComptesTest extends TestCase
         $this->assertFalse($resultat['en_ligne']);
         $this->assertNotNull($resultat['derniere_activite_at']);
         Carbon::setTestNow();
+    }
+
+    public function test_statut_diffuse_en_direct_aux_administrateurs(): void
+    {
+        Event::fake([PresenceCompte::class]);
+        $etudiant = $this->user('etudiant');
+
+        $jeton = $this->postJson('/api/login', ['email' => $etudiant->email, 'password' => 'motdepasse'])->json('access_token');
+        Event::assertDispatched(PresenceCompte::class, fn ($e) => $e->user->id === $etudiant->id && $e->enLigne
+            && $e->broadcastOn()->name === 'private-comptes' && $e->broadcastWith()['role'] === 'etudiant');
+
+        Carbon::setTestNow(now()->addMinute());
+        $this->app['auth']->forgetGuards();
+        $this->withToken($jeton)->postJson('/api/presence')->assertNoContent();
+        Event::assertDispatchedTimes(PresenceCompte::class, 2);
+
+        $this->app['auth']->forgetGuards();
+        $this->withToken($jeton)->postJson('/api/logout')->assertOk();
+        Event::assertDispatched(PresenceCompte::class, fn ($e) => !$e->enLigne);
+        Carbon::setTestNow();
+
+        // Fin de consultation par l'administration : l'étudiant n'est pas annoncé hors ligne
+        $consultation = $etudiant->createToken('consultation', ['consultation'])->plainTextToken;
+        $this->app['auth']->forgetGuards();
+        $this->withToken($consultation)->postJson('/api/logout');
+        Event::assertDispatchedTimes(PresenceCompte::class, 3);
+    }
+
+    public function test_canal_des_statuts_reserve_aux_administrateurs(): void
+    {
+        config([
+            'broadcasting.default' => 'reverb',
+            'broadcasting.connections.reverb' => ['driver' => 'reverb', 'key' => 'k', 'secret' => 's', 'app_id' => 'a', 'options' => []],
+        ]);
+        require base_path('routes/channels.php');
+        $demande = ['socket_id' => '1234.5678', 'channel_name' => 'private-comptes'];
+
+        $this->actingAs($this->user('etudiant'), 'sanctum');
+        $this->postJson('/api/broadcasting/auth', $demande)->assertForbidden();
+
+        $this->app['auth']->forgetGuards();
+        $this->actingAs($this->admin(), 'sanctum');
+        $this->postJson('/api/broadcasting/auth', $demande)->assertOk();
     }
 
     public function test_une_consultation_ne_met_pas_en_ligne(): void

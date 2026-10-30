@@ -58,6 +58,7 @@ class User extends Authenticatable
         $this->timestamps = false;
         $this->forceFill(['derniere_connexion_at' => now(), 'derniere_activite_at' => now()])->save();
         $this->timestamps = true;
+        $this->diffuserPresence(true);
     }
 
     /** Application ouverte (signal de présence) ; écrit au plus une fois toutes les 20 s, sans modifier updated_at */
@@ -69,6 +70,21 @@ class User extends Authenticatable
         $this->timestamps = false;
         $this->forceFill(['derniere_activite_at' => now()])->save();
         $this->timestamps = true;
+        $this->diffuserPresence(true);
+    }
+
+    /**
+     * Statut en direct pour la page « Comptes et accès » (canal privé « comptes », administrateurs).
+     * Serveur Reverb arrêté : sans conséquence ni journal (envoyé à chaque signal de présence),
+     * la page se rabat sur une relecture toutes les 30 s.
+     */
+    public function diffuserPresence(bool $enLigne): void
+    {
+        try {
+            broadcast(new \App\Events\PresenceCompte($this, $enLigne));
+        } catch (\Throwable $e) {
+            // rien : voir ci-dessus
+        }
     }
 
     /**
