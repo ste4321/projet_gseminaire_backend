@@ -10,7 +10,7 @@ class SemestreController extends Controller
 {
     public function index()
     {
-        return Semestre::orderBy('id')->get();
+        return Semestre::withCount('matieres')->orderBy('id')->get();
     }
 
     public function store(Request $request)

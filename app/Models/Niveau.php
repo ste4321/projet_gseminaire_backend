@@ -26,4 +26,9 @@ class Niveau extends Model
     {
         return $this->hasMany(Matiere::class, 'id_niveau');
     }
+
+    public function parcours()
+    {
+        return $this->hasMany(EtudiantParcours::class, 'id_niveau');
+    }
 }

@@ -37,6 +37,11 @@ class AnneeAca extends Model
         return $this->hasMany(EtudiantParcours::class, 'id_annee_aca');
     }
 
+    public function annonces()
+    {
+        return $this->hasMany(Annonce::class, 'id_annee_aca');
+    }
+
     public function programme()
     {
         return $this->hasMany(ProgrammeMatiere::class, 'id_annee_aca');

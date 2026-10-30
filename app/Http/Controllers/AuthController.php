@@ -79,6 +79,7 @@ class AuthController extends Controller
 
         // Supprimer anciens tokens
         $user->tokens()->delete();
+        $user->noterConnexion();
 
         // Générer un token avec expiration
         $token = $user->createToken('auth_token', ['*'], Carbon::now()->addHours(24))->plainTextToken;
@@ -102,7 +103,12 @@ class AuthController extends Controller
     public function logout(Request $request)
     {
         // Supprimer le token actuel
-        $request->user()->currentAccessToken()->delete();
+        $jeton = $request->user()->currentAccessToken();
+        $consultation = in_array('consultation', $jeton->abilities ?? [], true);
+        $jeton->delete();
+        if (!$consultation) {
+            $request->user()->diffuserPresence(false); // la page « Comptes et accès » le voit hors ligne aussitôt
+        }
 
         Log::info('Déconnexion', [
             'user_id' => $request->user()->id,
@@ -121,10 +127,29 @@ class AuthController extends Controller
         ]);
     }
 
+    /**
+     * POST /api/presence : l'application est ouverte (signal envoyé toutes les 45 s).
+     * Ignoré pendant une consultation par l'administration : ce n'est pas la personne qui est là.
+     */
+    public function presence(Request $request)
+    {
+        $user = $request->user();
+        if (!in_array('consultation', $user->currentAccessToken()->abilities ?? [], true)) {
+            $user->noterActivite();
+        }
+
+        return response()->noContent();
+    }
+
     public function refresh(Request $request)
     {
         $user = $request->user();
-        
+
+        // Session prolongée par la personne elle-même (pas pendant une consultation par l'administration)
+        if (!in_array('consultation', $user->currentAccessToken()->abilities ?? [], true)) {
+            $user->noterConnexion();
+        }
+
         // Supprimer l'ancien token
         $request->user()->currentAccessToken()->delete();
         
