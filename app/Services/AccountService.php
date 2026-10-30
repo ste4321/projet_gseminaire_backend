@@ -7,8 +7,8 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 /**
- * Création des comptes de connexion (user_cession) pour les étudiants et les enseignants.
- * Point unique : étudiant (formulaire + import Excel), enseignant, réinitialisation par l'admin.
+ * Création des comptes de connexion (user_cession) pour les étudiants, les enseignants et les administrateurs.
+ * Point unique : étudiant (formulaire + import Excel), enseignant, administrateur, réinitialisation par l'admin.
  *
  * Aucun mot de passe n'est conservé en clair : le mot de passe provisoire est renvoyé
  * une seule fois à l'admin, puis l'utilisateur doit le remplacer à sa première connexion.

@@ -170,6 +170,7 @@ Route::middleware(['auth:sanctum', 'consultation.lecture'])->group(function () {
         Route::get('/user-cessions/presence', [UserCessionController::class, 'presence']);
         Route::patch('/user-cessions/bulk-toggle', [UserCessionController::class, 'bulkToggle']);
         Route::post('/user-cessions/bulk-delete', [UserCessionController::class, 'bulkDestroy']);
+        Route::post('/user-cessions/admins', [UserCessionController::class, 'storeAdmin'])->middleware('throttle:10,1');
         Route::patch('/user-cessions/{id}/toggle', [UserCessionController::class, 'toggle']);
         Route::post('/user-cessions/{id}/reset-password', [PasswordController::class, 'reset']);
         Route::delete('/user-cessions/{id}', [UserCessionController::class, 'destroy'])->whereNumber('id');

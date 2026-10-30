@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Enseignant;
 use App\Models\Etudiant;
 use App\Models\EtudiantParcours;
 use App\Models\User;
@@ -32,6 +33,31 @@ class SuppressionCompteTest extends TestCase
         $this->assertSame(0, $compte->tokens()->count());
         $this->assertNull($etudiant->refresh()->id_user_cession);
         $this->assertNotNull(EtudiantParcours::find($parcours->id));
+    }
+
+    public function test_supprimer_le_compte_d_un_enseignant_conserve_sa_fiche_sans_parler_de_bulletins(): void
+    {
+        $compte = $this->user('prof');
+        $enseignant = Enseignant::create(['nom_prenom' => 'Père Jean', 'id_user_cession' => $compte->id]);
+
+        $this->actingAs($this->admin(), 'sanctum');
+        $this->deleteJson("/api/user-cessions/{$compte->id}", ['code_confirmation' => $this->codeConfirmation('supprimer_compte')])
+            ->assertOk()
+            ->assertJsonPath('message', 'Compte de Père Jean supprimé. Sa fiche enseignant est conservée.');
+
+        $this->assertNull(User::find($compte->id));
+        $this->assertNull($enseignant->refresh()->id_user_cession);
+    }
+
+    public function test_suppression_groupee_de_comptes_enseignants(): void
+    {
+        $a = $this->user('prof');
+        $b = $this->user('prof');
+        $this->actingAs($this->admin(), 'sanctum');
+
+        $this->postJson('/api/user-cessions/bulk-delete', ['user_ids' => [$a->id, $b->id], 'code_confirmation' => $this->codeConfirmation('supprimer_compte')])
+            ->assertOk()
+            ->assertJsonPath('message', '2 comptes supprimés. Les fiches enseignant sont conservées.');
     }
 
     public function test_code_de_confirmation_exige(): void

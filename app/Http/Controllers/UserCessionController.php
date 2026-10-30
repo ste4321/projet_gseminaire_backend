@@ -6,9 +6,13 @@ use App\Models\Admin;
 use App\Models\Enseignant;
 use App\Models\Etudiant;
 use App\Models\User;
+use App\Services\AccountService;
 use App\Services\ConfirmationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Validation\Rule;
 
 /**
@@ -64,6 +68,80 @@ class UserCessionController extends Controller
         }));
     }
 
+    /**
+     * POST /api/user-cessions/admins : nouvel administrateur, depuis l'onglet Administrateurs de « Comptes et accès ».
+     * Exige le mot de passe de l'administrateur connecté (5 essais, comme à la connexion) : une session restée
+     * ouverte ne suffit pas pour donner ces droits à quelqu'un. Le compte est actif tout de suite,
+     * avec un mot de passe provisoire affiché une seule fois.
+     */
+    public function storeAdmin(Request $request, AccountService $accounts)
+    {
+        $validated = $request->validate([
+            'nom_prenom'       => ['required', 'string', 'max:255'],
+            'email'            => ['required', 'email:filter', 'max:255'],
+            'telephone'        => ['nullable', 'string', 'max:20'],
+            'current_password' => ['required', 'string'],
+        ], [
+            'nom_prenom.required'       => 'Le nom est obligatoire.',
+            'email.required'            => "L'email est obligatoire : il sert d'identifiant de connexion.",
+            'email.email'               => "Cet email n'est pas valide.",
+            'current_password.required' => 'Saisissez votre mot de passe pour confirmer.',
+        ]);
+
+        $demandeur = $request->user();
+        $cleEssais = 'confirmation_admin:' . $demandeur->id;
+
+        if (RateLimiter::tooManyAttempts($cleEssais, 5)) {
+            $minutes = (int) ceil(RateLimiter::availableIn($cleEssais) / 60);
+
+            return response()->json(['message' => "Trop d'essais de mot de passe. Réessayez dans {$minutes} minute" . ($minutes > 1 ? 's' : '') . '.'], 429);
+        }
+
+        if (!Hash::check($validated['current_password'], $demandeur->password)) {
+            RateLimiter::hit($cleEssais, 60 * 15);
+
+            return response()->json([
+                'message' => 'Mot de passe incorrect.',
+                'errors'  => ['current_password' => ['Mot de passe incorrect.']],
+            ], 422);
+        }
+        RateLimiter::clear($cleEssais);
+
+        if ($accounts->emailTaken($validated['email'])) {
+            return response()->json([
+                'message' => 'Cet email est déjà utilisé par un autre compte.',
+                'errors'  => ['email' => ['Cet email est déjà utilisé par un autre compte.']],
+            ], 422);
+        }
+
+        try {
+            [$admin, $user, $motDePasse] = DB::transaction(function () use ($accounts, $validated) {
+                [$user, $motDePasse] = $accounts->create('admin', $validated['email'], $validated['nom_prenom']);
+                $user->update(['is_verified' => true]);
+
+                $admin = Admin::create([
+                    'id_user_cession' => $user->id,
+                    'nom_prenom'      => $validated['nom_prenom'],
+                    'email'           => $user->email,
+                    'telephone'       => $validated['telephone'] ?? null,
+                ]);
+
+                return [$admin, $user, $motDePasse];
+            });
+        } catch (\Throwable $e) {
+            return $this->serverError("Erreur lors de l'ajout de l'administrateur.", $e);
+        }
+
+        Log::info('Administrateur créé', ['par' => $demandeur->id, 'compte' => $user->id]);
+
+        return response()->json([
+            'message'      => 'Administrateur ajouté avec succès.',
+            'admin'        => $admin,
+            'user'         => $user,
+            'mot_de_passe' => $motDePasse, // affiché une seule fois
+        ], 201);
+    }
+
     /** PATCH /api/user-cessions/{id}/toggle : active ou désactive un compte (jamais le sien) */
     public function toggle(Request $request, $id)
     {
@@ -115,7 +193,7 @@ class UserCessionController extends Controller
     /**
      * Suppression de comptes de connexion (ex. étudiant exclu), depuis la sélection de la page « Comptes et accès ».
      * Exige le code de confirmation (action supprimer_compte), un seul pour toute la sélection. Seul l'accès disparaît :
-     * le dossier de l'étudiant ou de l'enseignant (notes, bulletins, parcours) est conservé, détaché du compte.
+     * le dossier de l'étudiant (notes, bulletins, parcours) ou la fiche de l'enseignant est conservé, détaché du compte.
      * (Les clés étrangères des profils sont en cascade : sans ce détachement, le dossier et les notes seraient effacés.)
      * Un nouveau compte peut être recréé plus tard, par exemple par un nouvel import des étudiants.
      */
@@ -169,9 +247,16 @@ class UserCessionController extends Controller
             return $noms;
         });
 
-        $avecDossier = $comptes->contains(fn (User $u) => in_array($u->role, ['etudiant', 'prof'], true));
-        $conserve = $avecDossier ? ($comptes->count() > 1 ? ' Les dossiers (notes, bulletins, parcours) sont conservés.' : ' Son dossier (notes, bulletins, parcours) est conservé.') : '';
-        $message = $comptes->count() > 1
+        // Ce qui reste dépend du rôle : un enseignant n'a ni notes ni bulletins, seulement sa fiche
+        $plusieurs = $comptes->count() > 1;
+        $conserve = '';
+        if ($comptes->contains('role', 'etudiant')) {
+            $conserve .= $plusieurs ? ' Les dossiers (notes, bulletins, parcours) sont conservés.' : ' Son dossier (notes, bulletins, parcours) est conservé.';
+        }
+        if ($comptes->contains('role', 'prof')) {
+            $conserve .= $plusieurs ? ' Les fiches enseignant sont conservées.' : ' Sa fiche enseignant est conservée.';
+        }
+        $message = $plusieurs
             ? "{$comptes->count()} comptes supprimés.{$conserve}"
             : 'Compte de ' . ($noms[$comptes->first()->id] ?? $comptes->first()->email) . " supprimé.{$conserve}";
 
