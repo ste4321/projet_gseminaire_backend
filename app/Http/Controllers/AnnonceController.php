@@ -54,10 +54,10 @@ class AnnonceController extends Controller
             $validated['id_annee_aca'] = $annee->id;
         }
 
-        // Gestion du fichier joint
+        // Fichier joint : la base garde le chemin public (/storage/annonces/…), l'application le complète
+        // avec l'adresse du serveur (comme l'emploi du temps)
         if ($request->hasFile('fichier')) {
-            $path = $request->file('fichier')->store('annonces', 'public');
-            $validated['fichier'] = asset('storage/' . $path);
+            $validated['fichier'] = $this->enregistrerFichier($request);
         }
 
         $annonce = Annonce::create($validated);
@@ -86,8 +86,7 @@ class AnnonceController extends Controller
         // Nouveau fichier : remplace l'ancien. Case « retirer le fichier » : l'annonce n'a plus de pièce jointe
         if ($request->hasFile('fichier')) {
             $this->supprimerFichier($annonce);
-            $path = $request->file('fichier')->store('annonces', 'public');
-            $validated['fichier'] = asset('storage/' . $path);
+            $validated['fichier'] = $this->enregistrerFichier($request);
         } elseif ($request->boolean('supprimer_fichier')) {
             $this->supprimerFichier($annonce);
             $validated['fichier'] = null;
@@ -124,11 +123,19 @@ class AnnonceController extends Controller
         );
     }
 
-    /** Supprime du disque le fichier joint (s'il est stocké par l'application) */
+    private function enregistrerFichier(Request $request): string
+    {
+        return '/storage/' . $request->file('fichier')->store('annonces', 'public');
+    }
+
+    /**
+     * Supprime du disque le fichier joint stocké par l'application. Accepte le chemin public (/storage/annonces/x)
+     * comme les adresses complètes des anciennes annonces (http://…/storage/annonces/x).
+     */
     private function supprimerFichier(Annonce $annonce): void
     {
-        if ($annonce->fichier && str_starts_with($annonce->fichier, asset('storage/'))) {
-            Storage::disk('public')->delete(str_replace(asset('storage/'), '', $annonce->fichier));
+        if ($annonce->fichier && preg_match('#/storage/(annonces/[^?\#]+)$#', $annonce->fichier, $m)) {
+            Storage::disk('public')->delete($m[1]);
         }
     }
 
@@ -147,6 +154,8 @@ class AnnonceController extends Controller
             'description.required' => "Le contenu de l'annonce est obligatoire.",
             'fichier.mimes'        => 'Formats acceptés : PDF, Word, Excel, ZIP, JPG, PNG.',
             'fichier.max'          => 'Le fichier ne doit pas dépasser 10 Mo.',
+            // Fichier refusé par PHP avant Laravel (au-delà de upload_max_filesize du serveur)
+            'fichier.uploaded'     => "Le fichier n'a pas pu être reçu : le serveur accepte au plus " . ini_get('upload_max_filesize') . 'o par fichier.',
             'destinataires.in'     => 'Destinataires inconnus.',
         ]);
 
