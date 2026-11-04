@@ -33,6 +33,12 @@ class EtudiantParcours extends Model
         'matricule',
     ];
 
+    /** Inscriptions d'étudiants qui n'ont pas quitté le séminaire (statut vide compris) */
+    public function scopeActifs($query)
+    {
+        return $query->where(fn ($q) => $q->whereNull('statut')->orWhereNotIn('statut', self::SORTIES));
+    }
+
     /**
      * Relations
      */

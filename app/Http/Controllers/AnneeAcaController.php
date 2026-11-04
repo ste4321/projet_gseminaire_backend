@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\AnneeAca;
 use App\Models\Annonce;
 use App\Models\EtudiantParcours;
+use App\Models\Lecon;
 use App\Models\ProgrammeMatiere;
 use App\Models\PublicationNote;
 use Illuminate\Http\Request;
@@ -67,6 +68,7 @@ class AnneeAcaController extends Controller
             'inscription(s)' => EtudiantParcours::where('id_annee_aca', $annee->id)->count(),
             'annonce(s)' => Annonce::where('id_annee_aca', $annee->id)->count(),
             'publication(s) de notes' => PublicationNote::where('id_annee_aca', $annee->id)->count(),
+            'leçon(s)' => Lecon::where('id_annee_aca', $annee->id)->count(),
         ]);
         if ($liens) {
             $detail = implode(', ', array_map(fn ($n, $quoi) => "{$n} {$quoi}", $liens, array_keys($liens)));

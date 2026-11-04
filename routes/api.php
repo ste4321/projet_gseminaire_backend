@@ -8,6 +8,7 @@ use App\Http\Controllers\ConsultationController;
 use App\Http\Controllers\ContactController;
 use App\Http\Controllers\EmploiDuTempsController;
 use App\Http\Controllers\EnseignantController;
+use App\Http\Controllers\EspaceEnseignantController;
 use App\Http\Controllers\AnneeAcaController;
 use App\Http\Controllers\EtudiantController;
 use App\Http\Controllers\AnnonceController;
@@ -74,6 +75,18 @@ Route::middleware(['auth:sanctum', 'consultation.lecture'])->group(function () {
     Route::middleware('role:etudiant')->prefix('etudiant')->group(function () {
         Route::get('/parcours', [EspaceEtudiantController::class, 'parcours']);
         Route::get('/releve', [EspaceEtudiantController::class, 'releve']);
+        Route::get('/lecons', [EspaceEtudiantController::class, 'lecons']);
+    });
+
+    // Espace enseignant : uniquement les matières qui lui sont attribuées
+    Route::middleware('role:prof')->prefix('enseignant')->group(function () {
+        Route::get('/matieres', [EspaceEnseignantController::class, 'matieres']);
+        Route::get('/matieres/{id}/notes', [EspaceEnseignantController::class, 'notes'])->whereNumber('id');
+        Route::put('/matieres/{id}/notes', [EspaceEnseignantController::class, 'enregistrerNotes'])->whereNumber('id');
+        Route::get('/lecons', [EspaceEnseignantController::class, 'lecons']);
+        Route::post('/lecons', [EspaceEnseignantController::class, 'creerLecon']);
+        Route::post('/lecons/{id}', [EspaceEnseignantController::class, 'modifierLecon'])->whereNumber('id');
+        Route::delete('/lecons/{id}', [EspaceEnseignantController::class, 'supprimerLecon'])->whereNumber('id');
     });
 
     // ─── 3. Administration ────────────────────────────────────────────────

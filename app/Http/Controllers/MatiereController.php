@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Lecon;
 use App\Models\Matiere;
 use App\Models\Niveau;
 use App\Models\Note;
@@ -25,7 +26,7 @@ class MatiereController extends Controller
             return Matiere::with(['niveau', 'semestre'])->orderBy('id')->get();
         }
 
-        return Matiere::with(['niveau', 'semestre', 'programmes.annee'])
+        return Matiere::with(['niveau', 'semestre', 'programmes.annee', 'programmes.enseignant:id,nom_prenom'])
             ->withCount([
                 'notes as notes_total',
                 'notes as notes_annee' => fn ($q) => $q->whereHas('etudiantParcours', fn ($p) => $p->where('id_annee_aca', $annee)),
@@ -64,6 +65,7 @@ class MatiereController extends Controller
                 ProgrammeMatiere::create([
                     'id_annee_aca' => $annee,
                     'id_matiere'   => $matiere->id,
+                    'id_enseignant' => $validated['id_enseignant'] ?? null,
                     'coefficient'  => $validated['coefficient'],
                     'heures'       => $validated['heures'],
                 ]);
@@ -113,7 +115,8 @@ class MatiereController extends Controller
             $matiere->update($validated);
             if ($annee) {
                 ProgrammeMatiere::where('id_annee_aca', $annee)->where('id_matiere', $matiere->id)
-                    ->update(['coefficient' => $validated['coefficient'], 'heures' => $validated['heures']]);
+                    ->update(['coefficient' => $validated['coefficient'], 'heures' => $validated['heures']]
+                        + (array_key_exists('id_enseignant', $validated) ? ['id_enseignant' => $validated['id_enseignant']] : []));
             }
         });
 
@@ -130,6 +133,14 @@ class MatiereController extends Controller
             return response()->json([
                 'message' => "Impossible de supprimer : {$nbNotes} note(s) sont enregistrées pour cette matière. "
                     . "Pour ne plus l'enseigner, retirez-la du programme de l'année : ses notes passées sont conservées.",
+            ], 409);
+        }
+
+        $nbLecons = Lecon::where('id_matiere', $matiere->id)->count();
+        if ($nbLecons > 0) {
+            return response()->json([
+                'message' => "Impossible de supprimer : {$nbLecons} leçon(s) sont déposées pour cette matière. "
+                    . "Pour ne plus l'enseigner, retirez-la du programme de l'année.",
             ], 409);
         }
 
@@ -154,6 +165,8 @@ class MatiereController extends Controller
             'au_programme'  => (bool) $programme,
             'coefficient'   => $programme ? $programme->coefficient : (float) str_replace(',', '.', (string) $m->coefficient),
             'heures'        => $programme ? $programme->heures : (int) $m->heures,
+            'id_enseignant' => $programme?->id_enseignant,
+            'enseignant'    => $programme?->enseignant?->nom_prenom,
             'notes_annee'   => (int) $m->notes_annee,
             'notes_total'   => (int) $m->notes_total,
             // Années où la matière a été enseignée, avec leur coefficient (de la plus récente à la plus ancienne)
@@ -174,7 +187,7 @@ class MatiereController extends Controller
             return $matiere->load(['niveau', 'semestre']);
         }
 
-        $matiere->load(['niveau', 'semestre', 'programmes.annee'])->loadCount([
+        $matiere->load(['niveau', 'semestre', 'programmes.annee', 'programmes.enseignant:id,nom_prenom'])->loadCount([
             'notes as notes_total',
             'notes as notes_annee' => fn ($q) => $q->whereHas('etudiantParcours', fn ($p) => $p->where('id_annee_aca', $annee)),
         ]);
@@ -204,6 +217,8 @@ class MatiereController extends Controller
             'coefficient'  => ['required', 'numeric', 'min:0', 'max:100'],
             // Année dont le programme reçoit la matière (ajout) ou dont on modifie le coefficient (modification)
             'id_annee_aca' => ['nullable', 'integer', 'exists:annee_aca,id'],
+            // Qui enseigne la matière cette année-là : lui donne la saisie des notes et le dépôt des leçons
+            'id_enseignant' => ['nullable', 'integer', 'exists:corps_enseignant,id'],
         ];
     }
 

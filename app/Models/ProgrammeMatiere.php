@@ -11,7 +11,7 @@ class ProgrammeMatiere extends Model
 {
     protected $table = 'programme_matieres';
 
-    protected $fillable = ['id_annee_aca', 'id_matiere', 'coefficient', 'heures'];
+    protected $fillable = ['id_annee_aca', 'id_matiere', 'id_enseignant', 'coefficient', 'heures'];
 
     protected $casts = [
         'coefficient' => 'float',
@@ -26,6 +26,11 @@ class ProgrammeMatiere extends Model
     public function matiere()
     {
         return $this->belongsTo(Matiere::class, 'id_matiere');
+    }
+
+    public function enseignant()
+    {
+        return $this->belongsTo(Enseignant::class, 'id_enseignant');
     }
 
     /**
@@ -45,6 +50,7 @@ class ProgrammeMatiere extends Model
             static::create([
                 'id_annee_aca' => $vers,
                 'id_matiere'   => $ligne->id_matiere,
+                'id_enseignant' => $ligne->id_enseignant,
                 'coefficient'  => $ligne->coefficient,
                 'heures'       => $ligne->heures,
             ]);
