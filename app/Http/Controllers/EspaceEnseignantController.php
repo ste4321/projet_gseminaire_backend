@@ -11,6 +11,7 @@ use App\Models\Note;
 use App\Models\ProgrammeMatiere;
 use App\Models\PublicationNote;
 use App\Services\DiffusionService;
+use App\Services\NoteImportService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -145,6 +146,73 @@ class EspaceEnseignantController extends Controller
         ]);
 
         return response()->json(['message' => 'Notes enregistrées.']);
+    }
+
+    /**
+     * POST /api/enseignant/notes/import : même fichier que l'import de l'administration
+     * (NOTES_<CODE>_<NIVEAU>_<SEMESTRE>_<ANNEE>.xlsx, colonnes matricule et note), mais seulement
+     * pour une matière attribuée à l'enseignant connecté cette année-là, et tant que le semestre n'est pas publié.
+     */
+    public function importerNotes(Request $request, NoteImportService $import)
+    {
+        $request->validate(['file' => NoteImportService::REGLES_FICHIER], NoteImportService::MESSAGES_FICHIER);
+
+        $file = $request->file('file');
+        ['matiere' => $matiere, 'annee' => $annee, 'code' => $code] = $import->cible($file->getClientOriginalName());
+
+        // Responsable du cours uniquement : la matière d'un autre enseignant est refusée, même si elle existe
+        $programme = ProgrammeMatiere::with(['matiere.niveau', 'matiere.semestre'])
+            ->where('id_annee_aca', $annee->id)
+            ->where('id_matiere', $matiere->id)
+            ->where('id_enseignant', $this->enseignant($request)->id)
+            ->first();
+        if (!$programme) {
+            return response()->json([
+                'message' => "{$matiere->matiere} ({$code}) ne vous est pas attribuée pour {$annee->annee_aca} : "
+                    . "vous ne pouvez importer que les notes de vos propres matières.",
+            ], 403);
+        }
+
+        if ($this->verrouillee($programme)) {
+            return response()->json(['message' => "Ce semestre est publié : les notes de {$matiere->matiere} ne peuvent plus être modifiées. Adressez-vous à l'administration."], 409);
+        }
+
+        ['lignes' => $lignes, 'erreurs' => $erreurs] = $import->lignes($file);
+
+        // Seuls les étudiants qui suivent la matière (inscrits actifs du niveau, cette année)
+        $parMatricule = $this->inscrits($programme)
+            ->mapWithKeys(fn ($p) => [mb_strtolower((string) ($p->matricule ?? $p->etudiant?->matricule)) => $p->id]);
+
+        $importees = 0;
+        DB::transaction(function () use ($lignes, $parMatricule, $programme, &$importees, &$erreurs) {
+            foreach ($lignes as ['ligne' => $ligne, 'matricule' => $matricule, 'note' => $note]) {
+                $parcours = $parMatricule->get(mb_strtolower($matricule));
+                if (!$parcours) {
+                    $erreurs[] = "Ligne {$ligne} : {$matricule} ne suit pas cette matière";
+                    continue;
+                }
+                Note::updateOrCreate(['id_etudiant_parcours' => $parcours, 'id_matiere' => $programme->id_matiere], ['note' => $note]);
+                $importees++;
+            }
+        });
+
+        $numero = fn (string $e) => preg_match('/^Ligne (\d+)/', $e, $m) ? (int) $m[1] : 0;
+        usort($erreurs, fn ($a, $b) => $numero($a) <=> $numero($b));
+
+        Log::info('Notes importées par un enseignant', [
+            'compte'  => $request->user()->id,
+            'matiere' => $programme->id_matiere,
+            'annee'   => $programme->id_annee_aca,
+            'lignes'  => $importees,
+        ]);
+
+        return response()->json([
+            'message'  => "{$importees} note(s) importée(s) en {$matiere->matiere}.",
+            'matiere'  => $programme->id_matiere,
+            'annee'    => $programme->id_annee_aca,
+            'imported' => $importees,
+            'errors'   => $erreurs,
+        ]);
     }
 
     /** GET /api/enseignant/lecons?annee= : ses leçons de l'année, publiées ou non */
@@ -309,6 +377,7 @@ class EspaceEnseignantController extends Controller
             'code'        => $p->matiere->code_matiere,
             'niveau'      => $p->matiere->niveau?->niveau,
             'semestre'    => $p->matiere->semestre?->semestre,
+            'code_semestre' => $p->matiere->semestre?->code_semestre, // nom du fichier d'import (NOTES_…_S1_…)
             'coefficient' => $p->coefficient,
             'heures'      => $p->heures,
         ];

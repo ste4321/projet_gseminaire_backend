@@ -84,6 +84,7 @@ Route::middleware(['auth:sanctum', 'consultation.lecture'])->group(function () {
         Route::get('/matieres', [EspaceEnseignantController::class, 'matieres']);
         Route::get('/matieres/{id}/notes', [EspaceEnseignantController::class, 'notes'])->whereNumber('id');
         Route::put('/matieres/{id}/notes', [EspaceEnseignantController::class, 'enregistrerNotes'])->whereNumber('id');
+        Route::post('/notes/import', [EspaceEnseignantController::class, 'importerNotes']);
         Route::get('/lecons', [EspaceEnseignantController::class, 'lecons']);
         Route::post('/lecons', [EspaceEnseignantController::class, 'creerLecon']);
         Route::post('/lecons/{id}', [EspaceEnseignantController::class, 'modifierLecon'])->whereNumber('id');
