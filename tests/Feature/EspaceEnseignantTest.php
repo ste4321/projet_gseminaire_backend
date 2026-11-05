@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Events\LeconMiseAJour;
 use App\Models\AnneeAca;
 use App\Models\Enseignant;
 use App\Models\Etudiant;
@@ -15,6 +16,7 @@ use App\Models\Semestre;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -204,6 +206,18 @@ class EspaceEnseignantTest extends TestCase
         Storage::disk('public')->assertMissing($chemin);
     }
 
+    public function test_envoi_trop_volumineux_explique_en_francais(): void
+    {
+        // PHP vide une requête plus grosse que post_max_size : Laravel la refuse avant le contrôleur
+        $this->call('POST', '/api/enseignant/lecons', [], [], [], [
+            'CONTENT_LENGTH' => 1024 * 1024 * 1024, 'HTTP_ACCEPT' => 'application/json',
+        ])
+            ->assertStatus(413)
+            ->assertJsonPath('message', fn ($m) => str_starts_with($m, 'Le fichier est trop volumineux'))
+            ->assertJsonStructure(['errors' => ['fichier']]);
+        $this->assertSame(0, Lecon::count());
+    }
+
     public function test_lecon_vide_ou_sur_la_matiere_d_un_autre_refusee(): void
     {
         $donnees = ['id_annee_aca' => $this->annee->id, 'id_matiere' => $this->matiere->id, 'titre' => 'Vide'];
@@ -243,6 +257,61 @@ class EspaceEnseignantTest extends TestCase
             ->assertJsonPath('0.titre', 'Publiée')
             ->assertJsonPath('0.matiere', 'Théologie')
             ->assertJsonPath('0.enseignant', 'Père Jean');
+    }
+
+    public function test_les_etudiants_du_niveau_sont_prevenus_de_la_publication_d_une_lecon(): void
+    {
+        Event::fake([LeconMiseAJour::class]);
+        $compte = $this->user('etudiant');
+        $this->parcours->etudiant->update(['id_user_cession' => $compte->id]);
+        $donnees = ['id_annee_aca' => $this->annee->id, 'id_matiere' => $this->matiere->id, 'contenu' => 'Texte'];
+
+        // Brouillon : personne n'est dérangé
+        $id = $this->postJson('/api/enseignant/lecons', $donnees + ['titre' => 'Brouillon'])->assertCreated()->json('id');
+        Event::assertNotDispatched(LeconMiseAJour::class);
+
+        // Première publication, puis modification, retrait et suppression d'une leçon publiée
+        $this->postJson("/api/enseignant/lecons/{$id}", ['titre' => 'Introduction', 'contenu' => 'Texte', 'publier' => true])->assertOk();
+        $this->postJson("/api/enseignant/lecons/{$id}", ['titre' => 'Introduction (v2)', 'contenu' => 'Texte', 'publier' => true])->assertOk();
+        $this->postJson("/api/enseignant/lecons/{$id}", ['titre' => 'Introduction (v2)', 'contenu' => 'Texte'])->assertOk();
+        $publiee = $this->postJson('/api/enseignant/lecons', $donnees + ['titre' => 'Chapitre 1', 'publier' => true])->json('id');
+        $this->deleteJson("/api/enseignant/lecons/{$publiee}")->assertOk();
+
+        $actions = [];
+        Event::assertDispatched(LeconMiseAJour::class, function (LeconMiseAJour $e) use ($compte, &$actions) {
+            $actions[] = $e->action;
+            return $e->idsUtilisateurs === [$compte->id];
+        });
+        $this->assertSame(['publiee', 'modifiee', 'retiree', 'publiee', 'retiree'], $actions);
+        Event::assertDispatched(LeconMiseAJour::class, fn ($e) => $e->broadcastWith()['matiere'] === 'Théologie'
+            && $e->broadcastWith()['enseignant'] === 'Père Jean' && $e->broadcastAs() === 'lecons.maj');
+    }
+
+    public function test_l_etudiant_ouvre_le_detail_d_une_lecon_de_son_niveau_seulement(): void
+    {
+        $commun = ['id_annee_aca' => $this->annee->id, 'id_matiere' => $this->matiere->id, 'id_enseignant' => $this->enseignant->id, 'contenu' => 'Texte complet'];
+        $lecon = Lecon::create($commun + ['titre' => 'Introduction', 'publie_le' => now()->subDay()]);
+        $suivante = Lecon::create($commun + ['titre' => 'Chapitre 1', 'publie_le' => now()]);
+        $brouillon = Lecon::create($commun + ['titre' => 'Brouillon']);
+        $autreNiveau = $this->matiereAuProgramme(['matiere' => 'Exégèse', 'id_niveau' => $this->niveaux['L2']->id, 'coefficient' => 1, 'heures' => 10]);
+        $ailleurs = Lecon::create(['id_matiere' => $autreNiveau->id, 'titre' => 'Autre niveau', 'publie_le' => now()] + $commun);
+
+        $compte = $this->user('etudiant');
+        $this->parcours->etudiant->update(['id_user_cession' => $compte->id]);
+        $this->actingAs($compte, 'sanctum');
+
+        $this->getJson("/api/etudiant/lecons/{$lecon->id}")
+            ->assertOk()
+            ->assertJsonPath('titre', 'Introduction')
+            ->assertJsonPath('contenu', 'Texte complet')
+            ->assertJsonPath('matiere', 'Théologie')
+            ->assertJsonPath('enseignant', 'Père Jean')
+            ->assertJsonPath('memes_matiere.0.id', $suivante->id)
+            ->assertJsonCount(2, 'memes_matiere');
+
+        $this->getJson("/api/etudiant/lecons/{$brouillon->id}")->assertNotFound();
+        $this->getJson("/api/etudiant/lecons/{$ailleurs->id}")->assertNotFound();
+        $this->getJson('/api/etudiant/lecons/999999')->assertNotFound();
     }
 
     public function test_l_admin_attribue_une_matiere_pour_une_annee_seulement(): void

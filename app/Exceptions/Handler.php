@@ -3,6 +3,8 @@
 namespace App\Exceptions;
 
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
+use Illuminate\Http\Exceptions\PostTooLargeException;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Throwable;
 
 class Handler extends ExceptionHandler
@@ -43,6 +45,22 @@ class Handler extends ExceptionHandler
     {
         $this->reportable(function (Throwable $e) {
             //
+        });
+
+        // Envoi plus gros que ce que PHP accepte (post_max_size) : PHP a vidé la requête, Laravel la refuse
+        // sans message. On explique pourquoi, avec la limite du serveur, au lieu d'une erreur muette.
+        $this->renderable(function (PostTooLargeException $e, $request) {
+            if (!$this->shouldReturnJson($request, $e)) {
+                return null;
+            }
+            // Limite annoncée : celle de l'application (10 Mo pour une leçon), ou celle de PHP si elle est plus basse
+            $limite = min(10, (int) floor(UploadedFile::getMaxFilesize() / 1024 / 1024)) ?: 1;
+
+            return response()->json([
+                'message' => "Le fichier est trop volumineux : {$limite} Mo maximum. "
+                    . 'Réduisez sa taille (PDF compressé, images allégées) ou découpez-le en plusieurs leçons.',
+                'errors'  => ['fichier' => ["Fichier trop volumineux : {$limite} Mo maximum."]],
+            ], 413);
         });
     }
 

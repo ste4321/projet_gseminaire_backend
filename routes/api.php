@@ -76,6 +76,7 @@ Route::middleware(['auth:sanctum', 'consultation.lecture'])->group(function () {
         Route::get('/parcours', [EspaceEtudiantController::class, 'parcours']);
         Route::get('/releve', [EspaceEtudiantController::class, 'releve']);
         Route::get('/lecons', [EspaceEtudiantController::class, 'lecons']);
+        Route::get('/lecons/{id}', [EspaceEtudiantController::class, 'lecon'])->whereNumber('id');
     });
 
     // Espace enseignant : uniquement les matières qui lui sont attribuées

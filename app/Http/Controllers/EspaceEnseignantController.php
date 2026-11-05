@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\LeconMiseAJour;
 use App\Models\AnneeAca;
 use App\Models\Enseignant;
 use App\Models\EtudiantParcours;
@@ -9,6 +10,7 @@ use App\Models\Lecon;
 use App\Models\Note;
 use App\Models\ProgrammeMatiere;
 use App\Models\PublicationNote;
+use App\Services\DiffusionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -178,6 +180,10 @@ class EspaceEnseignantController extends Controller
             'publie_le'     => $request->boolean('publier') ? now() : null,
         ] + $this->fichierEnvoye($request));
 
+        if ($lecon->publie_le) {
+            $this->diffuser(LeconMiseAJour::PUBLIEE, $lecon, $programme);
+        }
+
         return response()->json($lecon->load('matiere:id,matiere,code_matiere'), 201);
     }
 
@@ -185,7 +191,8 @@ class EspaceEnseignantController extends Controller
     public function modifierLecon(Request $request, $id)
     {
         $lecon = Lecon::findOrFail($id);
-        $this->programme($request, $lecon->id_matiere, $lecon->id_annee_aca);
+        $programme = $this->programme($request, $lecon->id_matiere, $lecon->id_annee_aca);
+        $etaitPubliee = (bool) $lecon->publie_le;
 
         $validated = $request->validate($this->reglesLecon(), $this->messagesLecon());
         $retirer = $request->boolean('supprimer_fichier') && !$request->hasFile('fichier');
@@ -205,6 +212,17 @@ class EspaceEnseignantController extends Controller
 
         $lecon->update($champs);
 
+        // Les étudiants ne sont concernés que par ce qu'ils voient (ou voyaient) : un brouillon modifié ne les dérange pas
+        $action = match (true) {
+            $lecon->publie_le && !$etaitPubliee => LeconMiseAJour::PUBLIEE,
+            $lecon->publie_le && $etaitPubliee  => LeconMiseAJour::MODIFIEE,
+            $etaitPubliee                       => LeconMiseAJour::RETIREE,
+            default                             => null,
+        };
+        if ($action) {
+            $this->diffuser($action, $lecon, $programme);
+        }
+
         return response()->json($lecon->load('matiere:id,matiere,code_matiere'));
     }
 
@@ -212,12 +230,31 @@ class EspaceEnseignantController extends Controller
     public function supprimerLecon(Request $request, $id)
     {
         $lecon = Lecon::findOrFail($id);
-        $this->programme($request, $lecon->id_matiere, $lecon->id_annee_aca);
+        $programme = $this->programme($request, $lecon->id_matiere, $lecon->id_annee_aca);
 
         $this->supprimerFichier($lecon);
         $lecon->delete();
 
+        if ($lecon->publie_le) {
+            $this->diffuser(LeconMiseAJour::RETIREE, $lecon, $programme);
+        }
+
         return response()->json(['message' => 'Leçon supprimée.']);
+    }
+
+    /** Prévient en direct les étudiants inscrits cette année au niveau de la matière */
+    private function diffuser(string $action, Lecon $lecon, ProgrammeMatiere $programme): void
+    {
+        $lecon->loadMissing(['matiere:id,matiere', 'enseignant:id,nom_prenom']);
+
+        DiffusionService::envoyer(
+            new LeconMiseAJour(
+                $action,
+                $lecon,
+                DiffusionService::etudiantsInscrits($programme->id_annee_aca, $programme->matiere->id_niveau),
+            ),
+            ['lecon' => $lecon->id],
+        );
     }
 
     private function enseignant(Request $request): Enseignant

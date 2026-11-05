@@ -57,26 +57,70 @@ class EspaceEtudiantController extends Controller
             return response()->json(['message' => 'Aucune inscription trouvée pour votre compte.'], 404);
         }
 
+        return $this->leconsVisibles($parcours)
+            ->with(['matiere:id,matiere,code_matiere', 'enseignant:id,nom_prenom'])
+            ->orderByDesc('publie_le')
+            ->get()
+            ->map(fn (Lecon $l) => $this->presenter($l));
+    }
+
+    /**
+     * GET /api/etudiant/lecons/{id} : une leçon publiée d'une matière de son programme (toutes ses inscriptions),
+     * avec les autres leçons de la même matière pour passer de l'une à l'autre.
+     */
+    public function lecon(Request $request, $id)
+    {
+        $lecon = Lecon::publiees()->with(['matiere:id,matiere,code_matiere,id_niveau', 'enseignant:id,nom_prenom'])->find($id);
+
+        // Inscription de l'étudiant l'année de la leçon, au niveau de la matière
+        $parcours = $lecon ? EtudiantParcours::where('id_etudiant', $this->etudiant($request)->id)
+            ->where('id_annee_aca', $lecon->id_annee_aca)
+            ->where('id_niveau', $lecon->matiere?->id_niveau)
+            ->first() : null;
+
+        // Même réponse qu'une leçon inexistante : on ne révèle pas ce que l'étudiant n'a pas à voir
+        if (!$parcours || !$this->leconsVisibles($parcours)->whereKey($lecon->id)->exists()) {
+            return response()->json(['message' => "Cette leçon n'est pas disponible."], 404);
+        }
+
+        return [
+            ...$this->presenter($lecon),
+            'parcours' => $parcours->id,
+            'memes_matiere' => Lecon::publiees()
+                ->where('id_annee_aca', $lecon->id_annee_aca)
+                ->where('id_matiere', $lecon->id_matiere)
+                ->orderByDesc('publie_le')
+                ->get(['id', 'titre', 'publie_le']),
+        ];
+    }
+
+    /** Leçons publiées des matières au programme de l'année et du niveau de l'inscription */
+    private function leconsVisibles(EtudiantParcours $parcours)
+    {
         $matieres = Matiere::auProgramme($parcours->id_annee_aca)
             ->where('matieres.id_niveau', $parcours->id_niveau)
             ->pluck('matieres.id');
 
         return Lecon::publiees()
-            ->with(['matiere:id,matiere,code_matiere', 'enseignant:id,nom_prenom'])
             ->where('id_annee_aca', $parcours->id_annee_aca)
-            ->whereIn('id_matiere', $matieres)
-            ->orderByDesc('publie_le')
-            ->get()
-            ->map(fn (Lecon $l) => [
-                'id'          => $l->id,
-                'titre'       => $l->titre,
-                'contenu'     => $l->contenu,
-                'fichier'     => $l->fichier,
-                'nom_fichier' => $l->nom_fichier,
-                'publie_le'   => $l->publie_le,
-                'matiere'     => $l->matiere?->matiere,
-                'enseignant'  => $l->enseignant?->nom_prenom,
-            ]);
+            ->whereIn('id_matiere', $matieres);
+    }
+
+    private function presenter(Lecon $l): array
+    {
+        return [
+            'id'          => $l->id,
+            'titre'       => $l->titre,
+            'contenu'     => $l->contenu,
+            'fichier'     => $l->fichier,
+            'nom_fichier' => $l->nom_fichier,
+            'publie_le'   => $l->publie_le,
+            'modifie_le'  => $l->updated_at,
+            'id_matiere'  => $l->id_matiere,
+            'matiere'     => $l->matiere?->matiere,
+            'code_matiere' => $l->matiere?->code_matiere,
+            'enseignant'  => $l->enseignant?->nom_prenom,
+        ];
     }
 
     private function parcoursDemande(Request $request): ?EtudiantParcours

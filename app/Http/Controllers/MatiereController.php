@@ -177,6 +177,7 @@ class MatiereController extends Controller
                     'annee_aca'    => $p->annee?->annee_aca,
                     'coefficient'  => $p->coefficient,
                     'heures'       => $p->heures,
+                    'enseignant'   => $p->enseignant?->nom_prenom,
                 ])->values(),
         ];
     }
