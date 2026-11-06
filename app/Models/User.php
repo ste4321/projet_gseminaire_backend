@@ -34,6 +34,7 @@ class User extends Authenticatable
         'derniere_connexion_at' => 'datetime',
         'derniere_activite_at' => 'datetime',
         'provisoire_depuis' => 'datetime',
+        'notifications_lues' => 'array',
     ];
 
     protected static function booted(): void

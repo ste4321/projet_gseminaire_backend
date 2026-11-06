@@ -5,6 +5,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CalendrierController;
 use App\Http\Controllers\ConfirmationController;
 use App\Http\Controllers\ConsultationController;
+use App\Http\Controllers\NotificationsLuesController;
 use App\Http\Controllers\ContactController;
 use App\Http\Controllers\EmploiDuTempsController;
 use App\Http\Controllers\EnseignantController;
@@ -63,6 +64,9 @@ Route::middleware(['auth:sanctum', 'consultation.lecture'])->group(function () {
 
     // Lecture commune aux trois rôles
     Route::middleware('role:admin,prof,etudiant')->group(function () {
+        // Notifications déjà lues (cloche), gardées sur le compte pour tous ses navigateurs
+        Route::get('/notifications/lues', [NotificationsLuesController::class, 'show']);
+        Route::put('/notifications/lues', [NotificationsLuesController::class, 'update'])->middleware('throttle:60,1');
         Route::get('/annonces', [AnnonceController::class, 'index']);
         Route::get('/emplois', [EmploiDuTempsController::class, 'index']);
         Route::get('/enseignants', [EnseignantController::class, 'index']);
