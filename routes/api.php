@@ -98,7 +98,12 @@ Route::middleware(['auth:sanctum', 'consultation.lecture'])->group(function () {
     // ─── 3. Administration ────────────────────────────────────────────────
     Route::middleware('role:admin')->group(function () {
         Route::get('/dashboard/stats', [DashboardController::class, 'stats']);
-        Route::get('/getContact', [ContactController::class, 'index']);
+
+        // Messages du formulaire « Contactez-nous » du site vitrine
+        Route::get('/contacts', [ContactController::class, 'index']);
+        Route::post('/contacts/lus', [ContactController::class, 'toutLu']);
+        Route::patch('/contacts/{id}', [ContactController::class, 'update'])->whereNumber('id');
+        Route::delete('/contacts/{id}', [ContactController::class, 'destroy'])->whereNumber('id');
 
         // Emploi du temps
         Route::post('/emplois', [EmploiDuTempsController::class, 'store']);

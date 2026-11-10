@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\AnneeAca;
+use App\Models\Contact;
 use App\Models\Annonce;
 use App\Models\Enseignant;
 use App\Models\Etudiant;
@@ -98,6 +99,8 @@ class DashboardController extends Controller
             ],
             // Notes par niveau et par semestre : avancement de la saisie et publication (bloc « À faire »)
             'publications' => $annee ? $this->publications($annee->id) : [],
+            // Messages du site vitrine pas encore lus (page « Messages »)
+            'messages_non_lus' => Contact::whereNull('lu_le')->count(),
             'annonces_recentes' => Annonce::with('niveau:id,niveau')
                 ->latest()
                 ->limit(4)

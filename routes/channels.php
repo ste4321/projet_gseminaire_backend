@@ -24,3 +24,10 @@ Broadcast::channel('comptes', function ($user) {
     return $user->role === 'admin'
         && !in_array('consultation', $user->currentAccessToken()?->abilities ?? [], true);
 });
+
+// Messages du formulaire « Contactez-nous » du site vitrine (App\Events\MessageContactMisAJour) :
+// administrateurs uniquement, jamais pendant une consultation de l'espace d'un autre utilisateur
+Broadcast::channel('administration', function ($user) {
+    return $user->role === 'admin'
+        && !in_array('consultation', $user->currentAccessToken()?->abilities ?? [], true);
+});
