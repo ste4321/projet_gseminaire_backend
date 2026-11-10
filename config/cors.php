@@ -25,7 +25,10 @@ return [
         'http://localhost:3000,http://localhost:3001'
     )))),
 
-    'allowed_origins_patterns' => [],
+    // En développement : appli ouverte depuis un téléphone du réseau local (ex : http://192.168.1.230:3000)
+    'allowed_origins_patterns' => env('APP_ENV') === 'local'
+        ? ['#^http://(192\.168|10|172\.(1[6-9]|2\d|3[01]))(\.\d{1,3}){2,3}(:\d+)?$#']
+        : [],
 
     'allowed_headers' => ['*'],
 
