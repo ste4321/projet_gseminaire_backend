@@ -10,9 +10,47 @@ use Illuminate\Support\Facades\Log;
 
 class InfoController extends Controller
 {
-    public function index()
+    /**
+     * GET /api/infos (public) — actualités, les plus récentes d'abord.
+     * - ?page=N[&per_page=6][&q=texte] : une page (site vitrine : « Voir plus » ; administration : pages et recherche) ;
+     * - sans paramètre : toutes (ancien format, gardé pour les versions déjà en ligne du site).
+     */
+    public function index(Request $request)
     {
-        return Info::latest()->get();
+        $filtres = $request->validate([
+            'page'     => 'nullable|integer|min:1',
+            'per_page' => 'nullable|integer|min:1|max:50',
+            'q'        => 'nullable|string|max:100',
+        ]);
+
+        $query = Info::query()->orderByDesc('created_at')->orderByDesc('id');
+        if (!isset($filtres['page'])) {
+            return $query->get();
+        }
+
+        $totalTout = (clone $query)->count();
+        if ($texte = trim($filtres['q'] ?? '')) {
+            $motif = '%' . addcslashes($texte, '%_\\') . '%';
+            $query->where(fn ($w) => $w
+                ->where('titre', 'ilike', $motif)
+                ->orWhere('description', 'ilike', $motif)
+                ->orWhere('auteur', 'ilike', $motif));
+        }
+        $page = $query->paginate($filtres['per_page'] ?? 6);
+
+        return response()->json([
+            'data'       => $page->items(),
+            'page'       => $page->currentPage(),
+            'pages'      => $page->lastPage(),
+            'total'      => $page->total(),
+            'total_tout' => $totalTout,
+        ]);
+    }
+
+    /** GET /api/infos/{id} (public) — une actualité : lien partagé (#actualite-12) vers une actualité ancienne, hors des pages chargées */
+    public function show($id)
+    {
+        return Info::findOrFail($id);
     }
 
     /** Publication : exige le code de confirmation émis par POST /api/confirmations (action publier_actualite) */

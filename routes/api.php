@@ -47,6 +47,7 @@ Route::post('/login', [AuthController::class, 'login'])->middleware('throttle:10
 // Site vitrine
 Route::post('/postContact', [ContactController::class, 'store'])->middleware('throttle:5,1');
 Route::get('/infos', [InfoController::class, 'index']);
+Route::get('/infos/{id}', [InfoController::class, 'show'])->whereNumber('id');
 Route::get('/calendrier', [CalendrierController::class, 'public']);
 
 // ─── 2. Utilisateur connecté ──────────────────────────────────────────────

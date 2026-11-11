@@ -13,9 +13,86 @@ use Illuminate\Support\Facades\Storage;
 class AnnonceController extends Controller
 {
     // 🔹 Liste toutes les annonces avec relations
+    /**
+     * GET /api/annonces — annonces visibles par l'utilisateur, les plus récentes d'abord.
+     * - ?page=N[&per_page=8][&q=texte][&annee=<id>][&destinataires=tous|enseignants|etudiants|niveau:<id>] :
+     *   une page, filtrée par le serveur ; total = annonces trouvées, total_tout = sans filtre.
+     * - ?recentes=N : seulement les N plus récentes (cloche, accueil) ;
+     * - sans paramètre : toutes (ancien format, à éviter : la liste grandit chaque année).
+     */
     public function index(Request $request)
     {
-        $query = Annonce::with(['niveau', 'anneeAca'])->orderByDesc('created_at');
+        $filtres = $request->validate([
+            'page'          => 'nullable|integer|min:1',
+            'per_page'      => 'nullable|integer|min:1|max:50',
+            'recentes'      => 'nullable|integer|min:1|max:100',
+            'q'             => 'nullable|string|max:100',
+            'annee'         => 'nullable|integer',
+            'destinataires' => ['nullable', 'string', 'regex:/^(tous|enseignants|etudiants|niveau:\d+)$/'],
+        ]);
+
+        $query = $this->visibles($request);
+        if ($query === null) {
+            return response()->json(isset($filtres['page']) ? $this->pageVide() : []);
+        }
+
+        if (isset($filtres['recentes'])) {
+            return response()->json($query->limit($filtres['recentes'])->get());
+        }
+
+        if (!isset($filtres['page'])) {
+            return response()->json($query->get());
+        }
+
+        $totalTout = (clone $query)->count();
+        $this->filtrer($query, $filtres);
+        $page = $query->paginate($filtres['per_page'] ?? 8);
+
+        return response()->json([
+            'data'       => $page->items(),
+            'page'       => $page->currentPage(),
+            'pages'      => $page->lastPage(),
+            'total'      => $page->total(),
+            'total_tout' => $totalTout,
+        ]);
+    }
+
+    private function pageVide(): array
+    {
+        return ['data' => [], 'page' => 1, 'pages' => 0, 'total' => 0, 'total_tout' => 0];
+    }
+
+    /** Recherche (titre, contenu, expéditeur), année et destinataires — mêmes règles que les filtres de la page Annonces */
+    private function filtrer($query, array $filtres): void
+    {
+        if ($texte = trim($filtres['q'] ?? '')) {
+            $motif = '%' . addcslashes($texte, '%_\\') . '%';
+            $query->where(fn ($w) => $w
+                ->where('titre', 'ilike', $motif)
+                ->orWhere('description', 'ilike', $motif)
+                ->orWhere('expediteur', 'ilike', $motif));
+        }
+        if (!empty($filtres['annee'])) {
+            $query->where('id_annee_aca', $filtres['annee']);
+        }
+        $choix = $filtres['destinataires'] ?? null;
+        if ($choix && str_starts_with($choix, 'niveau:')) {
+            // Étudiants d'un niveau précis
+            $query->where(fn ($w) => $w->where('destinataires', Annonce::ETUDIANTS)->orWhereNull('destinataires'))
+                ->where('id_niveau', (int) substr($choix, 7));
+        } elseif ($choix === Annonce::ETUDIANTS) {
+            // Étudiants de tous les niveaux
+            $query->where(fn ($w) => $w->where('destinataires', Annonce::ETUDIANTS)->orWhereNull('destinataires'))
+                ->whereNull('id_niveau');
+        } elseif ($choix) {
+            $query->where('destinataires', $choix);
+        }
+    }
+
+    /** Annonces que l'utilisateur a le droit de voir (null : aucune) */
+    private function visibles(Request $request)
+    {
+        $query = Annonce::with(['niveau', 'anneeAca'])->orderByDesc('created_at')->orderByDesc('id');
 
         // Étudiant : uniquement les annonces qui lui sont destinées, de son année et de son niveau (ou de tous les niveaux)
         if ($request->user()->role === 'etudiant') {
@@ -24,7 +101,7 @@ class AnnonceController extends Controller
                 ->first();
 
             if (!$parcours) {
-                return response()->json([]);
+                return null;
             }
 
             $query->whereIn('destinataires', [Annonce::ETUDIANTS, Annonce::TOUS])
@@ -37,7 +114,7 @@ class AnnonceController extends Controller
             $query->whereIn('destinataires', [Annonce::ENSEIGNANTS, Annonce::TOUS]);
         }
 
-        return response()->json($query->get());
+        return $query;
     }
 
     // 🔹 Créer une annonce
