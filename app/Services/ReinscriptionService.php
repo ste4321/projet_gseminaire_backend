@@ -36,12 +36,16 @@ class ReinscriptionService
         $suivants = $niveaux->map(fn (Niveau $n) => $n->suivant()?->id);
         $dejaInscrits = EtudiantParcours::where('id_annee_aca', $cible->id)->pluck('id_niveau', 'id_etudiant');
 
-        return EtudiantParcours::with(['etudiant', 'niveau', 'annee_academique'])
+        $parcours = EtudiantParcours::with(['etudiant', 'niveau', 'annee_academique'])
             ->where('id_annee_aca', $source->id)
             ->whereHas('etudiant', fn ($q) => $q->whereNull('date_sortie'))
-            ->get()
-            ->map(function (EtudiantParcours $p) use ($niveaux, $suivants, $dejaInscrits) {
-                $general = $this->releves->pour($p)['general'];
+            ->get();
+        // Relevés de toute la promotion en quelques requêtes (au lieu de quatre par étudiant)
+        $releves = $this->releves->pourPlusieurs($parcours);
+
+        return $parcours
+            ->map(function (EtudiantParcours $p) use ($niveaux, $suivants, $dejaInscrits, $releves) {
+                $general = $releves[$p->id]['general'];
                 $suivant = $suivants[$p->id_niveau] ?? null;
 
                 [$decision, $niveauCible, $aVerifier] = match ($general['statut']) {

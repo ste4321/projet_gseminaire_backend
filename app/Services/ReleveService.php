@@ -6,6 +6,7 @@ use App\Models\EtudiantParcours;
 use App\Models\Matiere;
 use App\Models\Note;
 use App\Models\PublicationNote;
+use Illuminate\Support\Collection;
 
 /**
  * Relevé de notes d'une inscription (un étudiant, une année, un niveau).
@@ -31,22 +32,75 @@ class ReleveService
     {
         $parcours->loadMissing(['etudiant', 'niveau', 'annee_academique']);
 
-        // Programme de l'année de l'inscription : une matière ajoutée ou retirée une autre année ne change pas ce relevé
-        $matieres = Matiere::auProgramme($parcours->id_annee_aca)
-            ->with('semestre')
-            ->where('matieres.id_niveau', $parcours->id_niveau)
-            ->orderBy('matieres.id_semestre')
-            ->orderBy('matieres.matiere')
-            ->get();
-
         $notes = Note::where('id_etudiant_parcours', $parcours->id)
             ->whereNotNull('note')
             ->pluck('note', 'id_matiere');
 
-        $publications = PublicationNote::where('id_annee_aca', $parcours->id_annee_aca)
-            ->where('id_niveau', $parcours->id_niveau)
-            ->pluck('created_at', 'id_semestre');
+        return $this->calculer(
+            $parcours,
+            $this->programme($parcours->id_annee_aca, $parcours->id_niveau),
+            $notes,
+            $this->publications($parcours->id_annee_aca, $parcours->id_niveau),
+            $publiesSeulement
+        );
+    }
 
+    /**
+     * Relevés de plusieurs inscriptions (ex. propositions de réinscription d'une promotion) :
+     * exactement le même calcul que pour(), mais les données sont lues en quelques requêtes groupées
+     * au lieu de quatre requêtes par étudiant.
+     *
+     * @param  Collection<int, EtudiantParcours> $parcours
+     * @return array<int, array> relevé par id d'inscription
+     */
+    public function pourPlusieurs(Collection $parcours, bool $publiesSeulement = false): array
+    {
+        if ($parcours->isEmpty()) {
+            return [];
+        }
+        $parcours->each->loadMissing(['etudiant', 'niveau', 'annee_academique']);
+
+        $notes = Note::whereIn('id_etudiant_parcours', $parcours->pluck('id'))
+            ->whereNotNull('note')
+            ->get(['id_etudiant_parcours', 'id_matiere', 'note'])
+            ->groupBy('id_etudiant_parcours')
+            ->map(fn ($liste) => $liste->pluck('note', 'id_matiere'));
+
+        // Programme et publications : lus une fois par couple (année, niveau)
+        $programmes = [];
+        $publications = [];
+        $releves = [];
+        foreach ($parcours as $p) {
+            $cle = "{$p->id_annee_aca}-{$p->id_niveau}";
+            $programmes[$cle] ??= $this->programme($p->id_annee_aca, $p->id_niveau);
+            $publications[$cle] ??= $this->publications($p->id_annee_aca, $p->id_niveau);
+            $releves[$p->id] = $this->calculer($p, $programmes[$cle], $notes->get($p->id, collect()), $publications[$cle], $publiesSeulement);
+        }
+
+        return $releves;
+    }
+
+    /** Programme de l'année de l'inscription : une matière ajoutée ou retirée une autre année ne change pas ce relevé */
+    private function programme(int $anneeId, int $niveauId): Collection
+    {
+        return Matiere::auProgramme($anneeId)
+            ->with('semestre')
+            ->where('matieres.id_niveau', $niveauId)
+            ->orderBy('matieres.id_semestre')
+            ->orderBy('matieres.matiere')
+            ->get();
+    }
+
+    /** Date de publication des notes, par semestre */
+    private function publications(int $anneeId, int $niveauId): Collection
+    {
+        return PublicationNote::where('id_annee_aca', $anneeId)
+            ->where('id_niveau', $niveauId)
+            ->pluck('created_at', 'id_semestre');
+    }
+
+    private function calculer(EtudiantParcours $parcours, Collection $matieres, Collection $notes, Collection $publications, bool $publiesSeulement): array
+    {
         $semestres = $matieres
             ->groupBy(fn ($m) => $m->id_semestre ?? 0)
             ->map(function ($liste) use ($notes, $publications, $publiesSeulement) {
