@@ -30,18 +30,22 @@ class DashboardController extends Controller
             ? $annees->firstWhere('id', (int) $request->query('annee'))
             : $annees->first();
 
-        $parcoursAnnee = EtudiantParcours::query()->when($annee, fn ($q) => $q->where('id_annee_aca', $annee->id));
-        $inscrits = $annee ? (clone $parcoursAnnee)->count() : 0;
+        // Inscrits de l'année par niveau : une seule requête groupée (au lieu d'une par niveau)
+        $niveaux = Niveau::orderBy('niveau')->get(['id', 'niveau']);
+        $inscritsParNiveau = $annee
+            ? EtudiantParcours::where('id_annee_aca', $annee->id)
+                ->selectRaw('id_niveau, COUNT(*) as total')
+                ->groupBy('id_niveau')
+                ->pluck('total', 'id_niveau')
+                ->map(fn ($total) => (int) $total)
+            : collect();
+        $inscrits = $inscritsParNiveau->sum();
 
         // Inscrits par niveau (tous les niveaux, même vides)
-        $parNiveau = Niveau::orderBy('niveau')->get(['id', 'niveau'])->map(function ($niveau) use ($annee) {
-            return [
-                'niveau' => $niveau->niveau,
-                'total'  => $annee
-                    ? EtudiantParcours::where('id_annee_aca', $annee->id)->where('id_niveau', $niveau->id)->count()
-                    : 0,
-            ];
-        });
+        $parNiveau = $niveaux->map(fn ($niveau) => [
+            'niveau' => $niveau->niveau,
+            'total'  => $inscritsParNiveau->get($niveau->id, 0),
+        ]);
 
         // Origine des inscrits (champ « diocèse »)
         $parDiocese = $annee
@@ -55,14 +59,21 @@ class DashboardController extends Controller
                 ->map(fn ($r) => ['diocese' => $r->diocese, 'total' => (int) $r->total])
             : collect();
 
-        // Comptes de connexion par rôle
+        // Comptes de connexion par rôle : une seule requête groupée (au lieu de neuf)
+        $parRole = User::query()
+            ->selectRaw('role, COUNT(*) as total')
+            ->selectRaw('SUM(CASE WHEN is_verified = false THEN 1 ELSE 0 END) as inactifs')
+            ->selectRaw('SUM(CASE WHEN must_change_password = true THEN 1 ELSE 0 END) as provisoires')
+            ->groupBy('role')
+            ->get()
+            ->keyBy('role');
         $comptes = [];
         foreach (['admin', 'prof', 'etudiant'] as $role) {
-            $base = User::where('role', $role);
+            $ligne = $parRole->get($role);
             $comptes[$role] = [
-                'total'       => (clone $base)->count(),
-                'inactifs'    => (clone $base)->where('is_verified', false)->count(),
-                'provisoires' => (clone $base)->where('must_change_password', true)->count(),
+                'total'       => (int) ($ligne->total ?? 0),
+                'inactifs'    => (int) ($ligne->inactifs ?? 0),
+                'provisoires' => (int) ($ligne->provisoires ?? 0),
             ];
         }
 
@@ -82,23 +93,26 @@ class DashboardController extends Controller
                 ->count()
             : 0;
 
+        $totalEtudiants = Etudiant::count();
+        $totalEnseignants = Enseignant::count();
+
         return response()->json([
             'annee'   => $annee,
             'annees'  => $annees,
             'etudiants' => [
                 'inscrits'    => $inscrits,
-                'total'       => Etudiant::count(),
+                'total'       => $totalEtudiants,
                 'par_niveau'  => $parNiveau,
                 'par_diocese' => $parDiocese,
             ],
-            'enseignants' => Enseignant::count(),
+            'enseignants' => $totalEnseignants,
             'comptes'     => $comptes,
             'notes' => [
                 'saisies'   => $notesSaisies,
                 'attendues' => $notesAttendues,
             ],
             // Notes par niveau et par semestre : avancement de la saisie et publication (bloc « À faire »)
-            'publications' => $annee ? $this->publications($annee->id) : [],
+            'publications' => $annee ? $this->publications($annee->id, $niveaux, $inscritsParNiveau) : [],
             // Messages du site vitrine pas encore lus (page « Messages »)
             'messages_non_lus' => Contact::whereNull('lu_le')->count(),
             'annonces_recentes' => Annonce::with('niveau:id,niveau')
@@ -107,43 +121,63 @@ class DashboardController extends Controller
                 ->get(['id', 'titre', 'description', 'expediteur', 'created_at', 'destinataires', 'id_niveau']),
 
             // Compatibilité avec l'ancien format
-            'total_etudiants' => Etudiant::count(),
-            'total_profs'     => Enseignant::count(),
+            'total_etudiants' => $totalEtudiants,
+            'total_profs'     => $totalEnseignants,
         ]);
     }
 
-    /** Pour chaque niveau ayant des inscrits : semestres, notes saisies / attendues, publication */
-    private function publications(int $anneeId): array
+    /**
+     * Pour chaque niveau ayant des inscrits : semestres, notes saisies / attendues, publication.
+     * Trois requêtes en tout (matières au programme, notes saisies groupées, publications),
+     * quel que soit le nombre de niveaux et de semestres.
+     */
+    private function publications(int $anneeId, $niveaux, $inscritsParNiveau): array
     {
         $publies = PublicationNote::where('id_annee_aca', $anneeId)
             ->get(['id_niveau', 'id_semestre'])
             ->map(fn ($p) => "{$p->id_niveau}-{$p->id_semestre}")
             ->flip();
 
+        // Matières au programme de l'année, par niveau puis par semestre
+        $matieres = Matiere::auProgramme($anneeId)
+            ->with('semestre:id,semestre')
+            ->whereNotNull('matieres.id_semestre')
+            ->orderBy('matieres.id_semestre')
+            ->get()
+            ->groupBy(['id_niveau', 'id_semestre']);
+
+        // Notes saisies de l'année, par niveau et semestre : seules comptent les matières au programme
+        // du niveau de l'inscription (même règle que le calcul des notes attendues)
+        $saisies = DB::table('notes')
+            ->join('etudiant_parcours as ep', 'ep.id', '=', 'notes.id_etudiant_parcours')
+            ->join('matieres as m', function ($join) {
+                $join->on('m.id', '=', 'notes.id_matiere')->on('m.id_niveau', '=', 'ep.id_niveau');
+            })
+            ->join('programme_matieres as pm', function ($join) use ($anneeId) {
+                $join->on('pm.id_matiere', '=', 'm.id')->where('pm.id_annee_aca', $anneeId);
+            })
+            ->where('ep.id_annee_aca', $anneeId)
+            ->whereNotNull('notes.note')
+            ->whereNotNull('m.id_semestre')
+            ->groupBy('ep.id_niveau', 'm.id_semestre')
+            ->selectRaw('ep.id_niveau, m.id_semestre, COUNT(*) as total')
+            ->get()
+            ->mapWithKeys(fn ($r) => ["{$r->id_niveau}-{$r->id_semestre}" => (int) $r->total]);
+
         $lignes = [];
-        foreach (Niveau::orderBy('niveau')->get(['id', 'niveau']) as $niveau) {
-            $parcoursIds = EtudiantParcours::where('id_annee_aca', $anneeId)->where('id_niveau', $niveau->id)->pluck('id');
-            if ($parcoursIds->isEmpty()) {
+        foreach ($niveaux as $niveau) {
+            $inscrits = $inscritsParNiveau->get($niveau->id, 0);
+            if ($inscrits === 0) {
                 continue;
             }
-            $matieres = Matiere::auProgramme($anneeId)
-                ->with('semestre:id,semestre')
-                ->where('matieres.id_niveau', $niveau->id)
-                ->whereNotNull('matieres.id_semestre')
-                ->orderBy('matieres.id_semestre')
-                ->get()
-                ->groupBy('id_semestre');
-
-            foreach ($matieres as $idSemestre => $liste) {
+            foreach ($matieres->get($niveau->id, collect()) as $idSemestre => $liste) {
+                $cle = "{$niveau->id}-{$idSemestre}";
                 $lignes[] = [
                     'niveau'          => $niveau->niveau,
                     'semestre'        => $liste->first()->semestre?->semestre,
-                    'notes_saisies'   => Note::whereIn('id_etudiant_parcours', $parcoursIds)
-                        ->whereIn('id_matiere', $liste->pluck('id'))
-                        ->whereNotNull('note')
-                        ->count(),
-                    'notes_attendues' => $liste->count() * $parcoursIds->count(),
-                    'publie'          => $publies->has("{$niveau->id}-{$idSemestre}"),
+                    'notes_saisies'   => $saisies->get($cle, 0),
+                    'notes_attendues' => $liste->count() * $inscrits,
+                    'publie'          => $publies->has($cle),
                 ];
             }
         }
